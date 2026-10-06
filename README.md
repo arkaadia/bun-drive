@@ -27,6 +27,17 @@ Bun-Drive dynamically discovers SMB network shares across an Active Directory do
 - **Drive Letter Conflict Resolution & Safe Replacement**: Enumerates drive letters `D:` through `Z:`. When an existing mapping conflict is detected, prompts the user with conflict details (existing drive and target) and offers safe replacement (clean unmap followed by remap) or selection of another free letter—never silently overwriting.
 - **Persistent Mapping & Explorer Consistency**: Creates persistent drive letters (`/persistent:yes`) that reconnect across Windows logon sessions while maintaining synchronization across Bun-Drive, the Explorer Shell Namespace, and mapped drive letters.
 
+### Phase 3 Completion: Right-Click Actions & Windows Properties Dialog
+- **Right-Click Context Menu**: Native context menu on any network share or folder with:
+  - **Open**: Directly launches the real UNC path in native Windows File Explorer.
+  - **Map Drive**: Connects into the existing Phase 3 drive-mapping workflow with drive letter selection, conflict detection, persistent toggles, and safe replacement.
+  - **Properties**: Displays authentic Windows properties with file/folder counts, size, NTFS/SMB ACL verification, security context, and mapped drive status.
+  - **Copy UNC Path**: Instantly copies the full UNC path to clipboard.
+- **Windows Properties Dialog**: Recreates the authentic Windows Properties dialog with three distinct tabs:
+  - **General**: Displays resource name, UNC path, server, share, subfolder, local/remote status, item type (Share, Folder, File), file size, folder and file counts, creation/modification timestamps, and file attributes.
+  - **Sharing & Mapping**: Network path details, mapped drive letter, live connection status, network availability, and inline buttons to map or unmap drive letters.
+  - **Security & Permissions**: Verified Windows NTFS/SMB permissions (Read/Traverse, Write/Modify, verified ACL status), Active Directory user credentials, domain name, and authentication token type. Zero fabricated data; strictly verifies real permissions without attempting to bypass Windows security.
+
 ---
 
 ## Technical Guide & Operations

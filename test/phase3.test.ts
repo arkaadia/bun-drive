@@ -174,4 +174,89 @@ describe('Phase 3: Active Directory Share Management & File Browsing', () => {
       assert.ok(!status.mappedDrives.some(d => d.driveLetter === 'W:'));
     });
   });
+
+  describe('8. Right-Click Actions & Properties (Phase 3 Completion)', () => {
+    test('retrieves comprehensive properties for an accessible network share', async () => {
+      const props = await fileSystemService.getProperties('\\\\FS01-CORP.corp.local\\Projects');
+
+      assert.strictEqual(props.name, 'Projects');
+      assert.strictEqual(props.uncPath, '\\\\FS01-CORP.corp.local\\Projects');
+      assert.strictEqual(props.server, 'FS01-CORP.corp.local');
+      assert.strictEqual(props.share, 'Projects');
+      assert.strictEqual(props.itemType, 'Share');
+      assert.strictEqual(props.accessStatus, 'Accessible');
+      assert.strictEqual(props.isReadable, true);
+      assert.strictEqual(props.isWritable, true);
+      assert.strictEqual(props.availability, 'Available on Network');
+      assert.ok(props.locationType.includes('SMB Network Share'));
+      assert.ok(props.folderCount !== undefined && props.folderCount >= 0);
+      assert.ok(props.fileCount !== undefined && props.fileCount >= 0);
+      assert.ok(props.securityContext);
+      assert.ok(props.securityContext.domain);
+      assert.ok(props.securityContext.user);
+      assert.ok(props.securityContext.verifiedPermissions.includes('Verified'));
+    });
+
+    test('retrieves accurate properties for a subfolder and verifies directory counts', async () => {
+      const folderProps = await fileSystemService.getProperties('\\\\FS01-CORP.corp.local\\Projects\\Network');
+
+      assert.strictEqual(folderProps.name, 'Network');
+      assert.strictEqual(folderProps.server, 'FS01-CORP.corp.local');
+      assert.strictEqual(folderProps.share, 'Projects');
+      assert.strictEqual(folderProps.subPath, 'Network');
+      assert.strictEqual(folderProps.itemType, 'Folder');
+      assert.strictEqual(folderProps.accessStatus, 'Accessible');
+      assert.strictEqual(folderProps.isReadable, true);
+      assert.ok(folderProps.folderCount !== undefined);
+      assert.ok(folderProps.fileCount !== undefined);
+    });
+
+    test('retrieves properties for a specific network file and checks file attributes and size', async () => {
+      const fileProps = await fileSystemService.getProperties('\\\\FS01-CORP.corp.local\\Projects\\Project-Master-Schedule.xlsx');
+
+      assert.strictEqual(fileProps.name, 'Project-Master-Schedule.xlsx');
+      assert.strictEqual(fileProps.itemType, 'File');
+      assert.strictEqual(fileProps.accessStatus, 'Accessible');
+      assert.ok(fileProps.formattedSize);
+      assert.ok(fileProps.attributes?.includes('Archive'));
+    });
+
+    test('reflects mapped drive letter in properties when share is mapped', async () => {
+      // Map drive X: to Public
+      await shellIntegrationService.mapDriveLetter('X:', '\\\\FS01-CORP.corp.local\\Public', true);
+
+      const props = await fileSystemService.getProperties('\\\\FS01-CORP.corp.local\\Public', 'X:');
+      assert.strictEqual(props.mappedDrive, 'X:');
+      assert.strictEqual(props.connectionStatus, 'Connected');
+
+      // Unmap drive X:
+      await shellIntegrationService.unmapDriveLetter('X:');
+    });
+
+    test('reports verified Read-Only permission on restricted shares like Sysvol or Finance', async () => {
+      const financeProps = await fileSystemService.getProperties('\\\\FS01-CORP.corp.local\\Finance');
+      assert.strictEqual(financeProps.accessLevel, 'Read');
+      assert.strictEqual(financeProps.isReadable, true);
+      assert.strictEqual(financeProps.isWritable, false);
+    });
+
+    test('safely reports Access Denied without crashing when permissions are restricted', async () => {
+      const deniedProps = await fileSystemService.getProperties('\\\\APP-DATA.corp.local\\Executive-Board');
+      assert.strictEqual(deniedProps.accessStatus, 'Access Denied');
+      assert.strictEqual(deniedProps.accessLevel, 'None');
+      assert.strictEqual(deniedProps.isReadable, false);
+      assert.strictEqual(deniedProps.isWritable, false);
+      assert.strictEqual(deniedProps.availability, 'Access Restricted');
+      assert.ok(deniedProps.denialReason?.includes('Access Denied'));
+      assert.ok(deniedProps.securityContext?.verifiedPermissions.includes('Access Denied'));
+    });
+
+    test('safely reports Offline when the target server is unreachable', async () => {
+      const offlineProps = await fileSystemService.getProperties('\\\\OFFLINE-HOST.corp.local\\Data');
+      assert.strictEqual(offlineProps.accessStatus, 'Offline');
+      assert.strictEqual(offlineProps.isReadable, false);
+      assert.strictEqual(offlineProps.connectionStatus, 'Offline');
+      assert.ok(offlineProps.denialReason?.includes('offline'));
+    });
+  });
 });

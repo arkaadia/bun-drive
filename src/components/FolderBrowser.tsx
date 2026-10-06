@@ -18,9 +18,10 @@ import {
   Check, 
   AlertCircle,
   Clock,
-  HardDrive
+  HardDrive,
+  Info
 } from 'lucide-react';
-import { BrowseResult, FileSystemEntry } from '../types/drive.js';
+import { BrowseResult, FileSystemEntry, ContextMenuTarget } from '../types/drive.js';
 
 interface FolderBrowserProps {
   browseResult: BrowseResult | null;
@@ -29,6 +30,9 @@ interface FolderBrowserProps {
   onNavigateUp: () => void;
   onOpenInExplorer: (uncPath: string) => void;
   searchQuery: string;
+  onContextMenu?: (e: React.MouseEvent, target: ContextMenuTarget) => void;
+  onOpenProperties?: (uncPath: string) => void;
+  onMapDriveTarget?: (uncPath: string) => void;
 }
 
 export const FolderBrowser: React.FC<FolderBrowserProps> = ({
@@ -38,6 +42,9 @@ export const FolderBrowser: React.FC<FolderBrowserProps> = ({
   onNavigateUp,
   onOpenInExplorer,
   searchQuery,
+  onContextMenu,
+  onOpenProperties,
+  onMapDriveTarget
 }) => {
   const [copiedPath, setCopiedPath] = React.useState<string | null>(null);
 
@@ -138,6 +145,17 @@ export const FolderBrowser: React.FC<FolderBrowserProps> = ({
         </div>
 
         <div className="flex items-center gap-2">
+          {onOpenProperties && (
+            <button
+              onClick={() => onOpenProperties(browseResult.currentPath)}
+              className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-amber-400 hover:text-amber-300 text-xs border border-slate-700 flex items-center gap-1"
+              title="Properties (Alt+Enter)"
+            >
+              <Info className="w-3.5 h-3.5" />
+              <span>Properties</span>
+            </button>
+          )}
+
           <button
             onClick={() => handleCopy(browseResult.currentPath)}
             className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs border border-slate-700 flex items-center gap-1"
@@ -178,6 +196,20 @@ export const FolderBrowser: React.FC<FolderBrowserProps> = ({
             {filteredEntries.map((entry) => (
               <tr
                 key={entry.path}
+                onContextMenu={(e) => {
+                  if (onContextMenu) {
+                    onContextMenu(e, {
+                      name: entry.name,
+                      uncPath: entry.path,
+                      isDirectory: entry.isDirectory,
+                      isShare: false,
+                      server: browseResult.server,
+                      share: browseResult.share,
+                      accessStatus: 'Accessible',
+                      accessLevel: 'ReadWrite'
+                    });
+                  }
+                }}
                 onDoubleClick={() => {
                   if (entry.isDirectory) {
                     onNavigatePath(entry.path);
@@ -220,6 +252,18 @@ export const FolderBrowser: React.FC<FolderBrowserProps> = ({
                 {/* Actions */}
                 <td className="py-2 px-3 text-right">
                   <div className="flex items-center justify-end gap-1 opacity-80 group-hover:opacity-100">
+                    {onOpenProperties && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onOpenProperties(entry.path);
+                        }}
+                        className="p-1 rounded hover:bg-slate-800 text-amber-400 hover:text-amber-300 transition"
+                        title="Properties (Alt+Enter)"
+                      >
+                        <Info className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                     <button
                       onClick={(e) => {
                         e.stopPropagation();

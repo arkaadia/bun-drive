@@ -109,6 +109,25 @@ async function startServer() {
     }
   });
 
+  // 4b. Retrieve Real Windows Properties for UNC Path / Share / Folder / File
+  app.get('/api/properties', async (req: Request, res: Response) => {
+    try {
+      const targetPath = req.query.path as string;
+      if (!targetPath) {
+        res.status(400).json({ error: 'Missing path query parameter' });
+        return;
+      }
+      const shellStatus = await shellIntegrationService.getStatus();
+      const mapped = shellStatus.mappedDrives.find(d => d.uncPath.toLowerCase() === targetPath.toLowerCase());
+      const properties = await fileSystemService.getProperties(targetPath, mapped?.driveLetter);
+      res.json(properties);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.error('API:Properties', 'Error retrieving properties', err);
+      res.status(500).json({ error: message });
+    }
+  });
+
   // 5. Open in Native Windows File Explorer
   app.post('/api/open-in-explorer', async (req: Request, res: Response) => {
     try {

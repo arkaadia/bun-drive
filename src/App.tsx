@@ -10,7 +10,9 @@ import { FolderBrowser } from './components/FolderBrowser.js';
 import { NetworkSharesManager } from './components/NetworkSharesManager.js';
 import { DiagnosticsModal } from './components/DiagnosticsModal.js';
 import { StatusFooter } from './components/StatusFooter.js';
-import { NetworkShare, WindowsIdentity, BrowseResult, LogEntry, ShellIntegrationState } from './types/drive.js';
+import { ContextMenu } from './components/ContextMenu.js';
+import { PropertiesModal } from './components/PropertiesModal.js';
+import { NetworkShare, WindowsIdentity, BrowseResult, LogEntry, ShellIntegrationState, ContextMenuTarget } from './types/drive.js';
 
 export default function App() {
   const [identity, setIdentity] = useState<WindowsIdentity | null>(null);
@@ -31,9 +33,21 @@ export default function App() {
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const [viewMode, setViewMode] = useState<'tiles' | 'details'>('tiles');
   const [searchQuery, setSearchQuery] = useState<string>('');
+
+  // Diagnostics & Logs State
   const [isDiagnosticsOpen, setIsDiagnosticsOpen] = useState<boolean>(false);
   const [diagnosticsTab, setDiagnosticsTab] = useState<'identity' | 'logs' | 'shell' | 'drives' | 'probe'>('identity');
   const [logs, setLogs] = useState<LogEntry[]>([]);
+
+  // Right-Click Context Menu & Properties Dialog State (Phase 3 Completion)
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    target: ContextMenuTarget;
+  } | null>(null);
+  const [propertiesTarget, setPropertiesTarget] = useState<string | null>(null);
+  const [isPropertiesOpen, setIsPropertiesOpen] = useState<boolean>(false);
+  const [mappingTargetPath, setMappingTargetPath] = useState<string | null>(null);
 
   // Initial load
   useEffect(() => {
@@ -253,6 +267,34 @@ export default function App() {
     await handleRefresh();
   };
 
+  // Context Menu & Properties Handlers (Phase 3 Completion)
+  const handleContextMenu = (e: React.MouseEvent, target: ContextMenuTarget) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({
+      x: e.clientX,
+      y: e.clientY,
+      target
+    });
+  };
+
+  const handleContextOpen = (target: ContextMenuTarget) => {
+    handleOpenInExplorer(target.uncPath);
+  };
+
+  const handleContextMapDrive = (target: ContextMenuTarget) => {
+    setMappingTargetPath(target.uncPath);
+    setActiveTab('manager');
+    if (currentPath !== 'Bun-Drive') {
+      setCurrentPath('Bun-Drive');
+    }
+  };
+
+  const handleOpenProperties = (uncPath: string) => {
+    setPropertiesTarget(uncPath);
+    setIsPropertiesOpen(true);
+  };
+
   const isRootView = currentPath === 'Bun-Drive';
 
   return (
@@ -287,6 +329,8 @@ export default function App() {
           shellState={shellState}
           onOpenShellSettings={(tab) => openDiagnosticsWithTab(tab || 'shell')}
           onNavigatePath={browseToPath}
+          onContextMenu={handleContextMenu}
+          onOpenProperties={handleOpenProperties}
         />
 
         {/* Content Pane */}
@@ -319,14 +363,14 @@ export default function App() {
             <div className="flex items-center gap-2">
               <button
                 onClick={() => openDiagnosticsWithTab('drives')}
-                className="px-2.5 py-1 bg-slate-800 hover:bg-slate-750 text-slate-300 rounded border border-slate-700 text-[11px]"
+                className="px-2.5 py-1 bg-slate-800 hover:bg-slate-755 text-slate-300 rounded border border-slate-700 text-[11px]"
                 title="Manage mapped drive letters"
               >
                 Drive Mappings ({shellState?.mappedDrives.length || 0})
               </button>
               <button
                 onClick={() => openDiagnosticsWithTab('shell')}
-                className="px-2.5 py-1 bg-slate-800 hover:bg-slate-750 text-emerald-300 rounded border border-slate-700 text-[11px]"
+                className="px-2.5 py-1 bg-slate-800 hover:bg-slate-755 text-emerald-300 rounded border border-slate-700 text-[11px]"
                 title="Windows Explorer Shell Namespace configuration"
               >
                 {shellState?.isRegisteredInExplorer ? 'Explorer Mounted' : 'Mount in Explorer'}
@@ -348,6 +392,9 @@ export default function App() {
                 onOpenInExplorer={(p) => handleOpenInExplorer(p)}
                 logs={logs}
                 onRefreshLogs={loadLogs}
+                initialSelectedPath={mappingTargetPath || undefined}
+                onContextMenu={handleContextMenu}
+                onOpenProperties={handleOpenProperties}
               />
             ) : (
               <SharesView
@@ -361,6 +408,9 @@ export default function App() {
                 searchQuery={searchQuery}
                 shellState={shellState}
                 onQuickSyncShell={handleSyncShell}
+                onContextMenu={handleContextMenu}
+                onOpenProperties={handleOpenProperties}
+                onMapDriveShare={(unc) => handleContextMapDrive({ name: '', uncPath: unc, isDirectory: true })}
               />
             )
           ) : (
@@ -371,6 +421,9 @@ export default function App() {
               onNavigateUp={handleNavigateUp}
               onOpenInExplorer={(p) => handleOpenInExplorer(p)}
               searchQuery={searchQuery}
+              onContextMenu={handleContextMenu}
+              onOpenProperties={handleOpenProperties}
+              onMapDriveTarget={(unc) => handleContextMapDrive({ name: '', uncPath: unc, isDirectory: true })}
             />
           )}
         </main>
@@ -402,6 +455,36 @@ export default function App() {
         onUnmapDrive={handleUnmapDrive}
         onOpenInExplorer={(p) => handleOpenInExplorer(p)}
         initialTab={diagnosticsTab}
+      />
+
+      {/* Right-Click Context Menu (Phase 3 Completion) */}
+      {contextMenu && (
+        <ContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          target={contextMenu.target}
+          onClose={() => setContextMenu(null)}
+          onOpen={handleContextOpen}
+          onMapDrive={handleContextMapDrive}
+          onProperties={(t) => handleOpenProperties(t.uncPath)}
+          onRefresh={handleRefresh}
+        />
+      )}
+
+      {/* Windows Properties Dialog (Phase 3 Completion) */}
+      <PropertiesModal
+        isOpen={isPropertiesOpen}
+        onClose={() => {
+          setIsPropertiesOpen(false);
+          setPropertiesTarget(null);
+        }}
+        targetPath={propertiesTarget}
+        onOpenInExplorer={(p) => handleOpenInExplorer(p)}
+        onTriggerMapDrive={(unc) => {
+          setIsPropertiesOpen(false);
+          handleContextMapDrive({ name: '', uncPath: unc, isDirectory: true });
+        }}
+        onTriggerUnmapDrive={handleUnmapDrive}
       />
     </div>
   );

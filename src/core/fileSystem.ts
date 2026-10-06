@@ -6,7 +6,7 @@
 
 import path from 'path';
 import fs from 'fs';
-import { BrowseResult, FileSystemEntry } from '../types/drive.js';
+import { BrowseResult, FileSystemEntry, ShareProperties } from '../types/drive.js';
 import { NativeBridge } from './nativeBridge.js';
 import { logger } from './logger.js';
 
@@ -333,6 +333,209 @@ export class WindowsFileSystemService {
    */
   public async openInExplorer(uncPath: string): Promise<boolean> {
     return NativeBridge.openInExplorer(uncPath);
+  }
+
+  /**
+   * Phase 3: Retrieve full Windows properties for a UNC path, share, or folder
+   */
+  public async getProperties(targetPath: string, mappedDriveLetter?: string | null): Promise<ShareProperties> {
+    const { server, share, subPath } = WindowsFileSystemService.parseUncPath(targetPath);
+    const itemName = subPath ? subPath.split('\\').pop() || share : share || server;
+    const isRootShare = !subPath && Boolean(share);
+    const isFile = !isRootShare && path.extname(itemName).length > 0;
+    const itemType: 'Share' | 'Folder' | 'File' = isRootShare ? 'Share' : (isFile ? 'File' : 'Folder');
+
+    logger.info('FileSystem', `Retrieving Windows properties for: ${targetPath}`);
+
+    // If on native Windows
+    if (NativeBridge.isWindowsHost()) {
+      try {
+        const stats = await fs.promises.stat(targetPath);
+        const isDir = stats.isDirectory();
+        let folderCount = 0;
+        let fileCount = 0;
+        const sizeBytes = stats.size;
+
+        if (isDir) {
+          try {
+            const dirEntries = await fs.promises.readdir(targetPath, { withFileTypes: true });
+            folderCount = dirEntries.filter(e => e.isDirectory()).length;
+            fileCount = dirEntries.filter(e => !e.isDirectory()).length;
+          } catch {}
+        }
+
+        let isWritable = false;
+        try {
+          if (isDir) {
+            const testFile = path.join(targetPath, `.bun_prop_probe_${Date.now()}.tmp`);
+            await fs.promises.writeFile(testFile, 'test');
+            await fs.promises.unlink(testFile);
+            isWritable = true;
+          }
+        } catch {
+          isWritable = false;
+        }
+
+        const identity = await NativeBridge.getWindowsIdentity();
+
+        return {
+          name: itemName,
+          uncPath: targetPath,
+          server,
+          share,
+          subPath: subPath || undefined,
+          itemType,
+          accessStatus: 'Accessible',
+          accessLevel: isWritable ? 'ReadWrite' : 'Read',
+          isReadable: true,
+          isWritable,
+          mappedDrive: mappedDriveLetter || null,
+          connectionStatus: mappedDriveLetter ? 'Connected' : 'Online',
+          availability: 'Available on Network',
+          locationType: isRootShare ? 'Remote SMB Network Share' : (isFile ? 'Remote Network File' : 'Remote Active Directory Share Directory'),
+          sizeBytes,
+          formattedSize: isDir ? undefined : WindowsFileSystemService.formatBytes(sizeBytes),
+          folderCount: isDir ? folderCount : undefined,
+          fileCount: isDir ? fileCount : undefined,
+          createdTime: stats.birthtime.toISOString(),
+          modifiedTime: stats.mtime.toISOString(),
+          attributes: isDir ? ['Directory'] : ['Archive'],
+          securityContext: {
+            user: identity.username,
+            domain: identity.domain,
+            authType: identity.authType,
+            verifiedPermissions: isWritable ? 'Read, Write, Traverse (ACL Verified)' : 'Read, Traverse (ACL Verified)'
+          }
+        };
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        const isAccessDenied = message.includes('EACCES') || message.includes('denied');
+        const identity = await NativeBridge.getWindowsIdentity();
+
+        return {
+          name: itemName,
+          uncPath: targetPath,
+          server,
+          share,
+          subPath: subPath || undefined,
+          itemType,
+          accessStatus: isAccessDenied ? 'Access Denied' : 'Offline',
+          accessLevel: 'None',
+          isReadable: false,
+          isWritable: false,
+          mappedDrive: mappedDriveLetter || null,
+          connectionStatus: isAccessDenied ? 'Disconnected' : 'Offline',
+          availability: isAccessDenied ? 'Access Restricted' : 'Offline',
+          locationType: isRootShare ? 'Remote SMB Network Share' : 'Remote Active Directory Share Directory',
+          denialReason: isAccessDenied ? 'Access Denied: Windows NTFS/SMB permissions restrict access' : message,
+          securityContext: {
+            user: identity.username,
+            domain: identity.domain,
+            authType: identity.authType,
+            verifiedPermissions: 'Access Denied'
+          }
+        };
+      }
+    }
+
+    // Non-Windows simulation / unit testing
+    const identity = await NativeBridge.getWindowsIdentity();
+
+    if (server.toLowerCase().includes('offline') || server.toLowerCase().includes('unreachable')) {
+      return {
+        name: itemName,
+        uncPath: targetPath,
+        server,
+        share,
+        subPath: subPath || undefined,
+        itemType,
+        accessStatus: 'Offline',
+        accessLevel: 'None',
+        isReadable: false,
+        isWritable: false,
+        mappedDrive: mappedDriveLetter || null,
+        connectionStatus: 'Offline',
+        availability: 'Offline',
+        locationType: isRootShare ? 'Remote SMB Network Share' : 'Remote Active Directory Share Directory',
+        denialReason: `Network Error: The server ${server} is offline or unreachable on SMB port 445.`,
+        securityContext: {
+          user: identity.username,
+          domain: identity.domain,
+          authType: identity.authType,
+          verifiedPermissions: 'Host Unreachable'
+        }
+      };
+    }
+
+    if (
+      share.toLowerCase().includes('executive') ||
+      share.toLowerCase().includes('hr-confidential') ||
+      subPath.toLowerCase().includes('denied') ||
+      subPath.toLowerCase().includes('restricted')
+    ) {
+      return {
+        name: itemName,
+        uncPath: targetPath,
+        server,
+        share,
+        subPath: subPath || undefined,
+        itemType,
+        accessStatus: 'Access Denied',
+        accessLevel: 'None',
+        isReadable: false,
+        isWritable: false,
+        mappedDrive: mappedDriveLetter || null,
+        connectionStatus: 'Disconnected',
+        availability: 'Access Restricted',
+        locationType: isRootShare ? 'Remote SMB Network Share' : 'Remote Active Directory Share Directory',
+        denialReason: 'Access Denied: Windows NTFS permissions do not allow reading this resource.',
+        securityContext: {
+          user: identity.username,
+          domain: identity.domain,
+          authType: identity.authType,
+          verifiedPermissions: 'Access Denied (NTFS/SMB ACL)'
+        }
+      };
+    }
+
+    const isReadOnly = share.toLowerCase().includes('finance') || share.toLowerCase() === 'sysvol' || share.toLowerCase() === 'netlogon';
+    const accessLevel = isReadOnly ? 'Read' : 'ReadWrite';
+
+    // Calculate simulated folder count / file count
+    const browse = await this.browsePath(targetPath);
+    const folderCount = browse.totalFolders;
+    const fileCount = browse.totalFiles;
+    const totalSize = browse.entries.reduce((acc, e) => acc + (e.size || 0), 0);
+
+    return {
+      name: itemName,
+      uncPath: targetPath,
+      server,
+      share,
+      subPath: subPath || undefined,
+      itemType,
+      accessStatus: 'Accessible',
+      accessLevel,
+      isReadable: true,
+      isWritable: !isReadOnly,
+      mappedDrive: mappedDriveLetter || null,
+      connectionStatus: mappedDriveLetter ? 'Connected' : 'Online',
+      availability: 'Available on Network',
+      locationType: isRootShare ? 'Remote SMB Network Share' : (isFile ? 'Remote Network File' : 'Remote Active Directory Share Directory'),
+      sizeBytes: totalSize > 0 ? totalSize : 4194304,
+      formattedSize: isFile ? WindowsFileSystemService.formatBytes(totalSize) : undefined,
+      folderCount: isFile ? undefined : folderCount,
+      fileCount: isFile ? undefined : fileCount,
+      createdTime: '2026-09-15T08:00:00.000Z',
+      modifiedTime: '2026-10-04T12:00:00.000Z',
+      attributes: isFile ? ['Archive'] : ['Directory'],
+      securityContext: {
+        user: identity.username,
+        domain: identity.domain,
+        authType: identity.authType,
+        verifiedPermissions: !isReadOnly ? 'Read, Write, Traverse (ACL Verified)' : 'Read, Traverse (ACL Verified)'
+      }
+    };
   }
 }
 

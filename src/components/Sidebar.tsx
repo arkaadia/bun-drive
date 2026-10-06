@@ -16,7 +16,7 @@ import {
   Download,
   FileText
 } from 'lucide-react';
-import { NetworkShare, WindowsIdentity, ShellIntegrationState } from '../types/drive.js';
+import { NetworkShare, WindowsIdentity, ShellIntegrationState, ContextMenuTarget } from '../types/drive.js';
 
 interface SidebarProps {
   shares: NetworkShare[];
@@ -29,6 +29,8 @@ interface SidebarProps {
   shellState: ShellIntegrationState | null;
   onOpenShellSettings: (tab?: 'shell' | 'drives') => void;
   onNavigatePath: (uncPath: string) => void;
+  onContextMenu?: (e: React.MouseEvent, target: ContextMenuTarget) => void;
+  onOpenProperties?: (uncPath: string) => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -41,7 +43,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
   inaccessibleCount,
   shellState,
   onOpenShellSettings,
-  onNavigatePath
+  onNavigatePath,
+  onContextMenu,
+  onOpenProperties
 }) => {
   const [isBunDriveExpanded, setIsBunDriveExpanded] = React.useState(true);
 
@@ -128,10 +132,25 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   <div
                     key={share.id}
                     onClick={() => onSelectShare(share)}
+                    onContextMenu={(e) => {
+                      if (onContextMenu) {
+                        onContextMenu(e, {
+                          name: share.name,
+                          uncPath: share.uncPath,
+                          isDirectory: true,
+                          isShare: true,
+                          server: share.server,
+                          share: share.name,
+                          mappedDrive: share.mappedDrive,
+                          accessStatus: share.status,
+                          accessLevel: share.accessLevel
+                        });
+                      }
+                    }}
                     className={`flex items-center justify-between px-2 py-1.5 rounded cursor-pointer transition group ${
                       isSelected
                         ? 'bg-blue-600 text-white font-medium shadow-sm'
-                        : 'hover:bg-slate-800 text-slate-300'
+                        : 'hover:bg-slate-850 text-slate-300'
                     }`}
                     title={`${share.uncPath} (${share.accessLevel})`}
                   >
@@ -182,6 +201,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <div
                 key={drive.driveLetter}
                 onClick={() => onNavigatePath(drive.uncPath)}
+                onContextMenu={(e) => {
+                  if (onContextMenu) {
+                    onContextMenu(e, {
+                      name: drive.shareName,
+                      uncPath: drive.uncPath,
+                      isDirectory: true,
+                      isShare: true,
+                      server: drive.uncPath.split('\\')[2] || 'SERVER',
+                      share: drive.shareName,
+                      mappedDrive: drive.driveLetter,
+                      accessStatus: 'Accessible',
+                      accessLevel: 'ReadWrite'
+                    });
+                  }
+                }}
                 className="flex items-center justify-between px-2 py-1.5 rounded hover:bg-slate-800 text-slate-200 cursor-pointer transition group"
                 title={`Mapped Drive ${drive.driveLetter} -> ${drive.uncPath}`}
               >

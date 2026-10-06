@@ -15,9 +15,10 @@ import {
   ArrowRight,
   Layers,
   HardDrive,
-  FolderSync
+  FolderSync,
+  Info
 } from 'lucide-react';
-import { NetworkShare, WindowsIdentity, ShellIntegrationState } from '../types/drive.js';
+import { NetworkShare, WindowsIdentity, ShellIntegrationState, ContextMenuTarget } from '../types/drive.js';
 
 interface SharesViewProps {
   shares: NetworkShare[];
@@ -30,6 +31,9 @@ interface SharesViewProps {
   searchQuery: string;
   shellState: ShellIntegrationState | null;
   onQuickSyncShell: () => void;
+  onContextMenu?: (e: React.MouseEvent, target: ContextMenuTarget) => void;
+  onOpenProperties?: (uncPath: string) => void;
+  onMapDriveShare?: (uncPath: string) => void;
 }
 
 export const SharesView: React.FC<SharesViewProps> = ({
@@ -43,6 +47,9 @@ export const SharesView: React.FC<SharesViewProps> = ({
   searchQuery,
   shellState,
   onQuickSyncShell,
+  onContextMenu,
+  onOpenProperties,
+  onMapDriveShare
 }) => {
   const [copiedId, setCopiedId] = React.useState<string | null>(null);
 
@@ -155,6 +162,21 @@ export const SharesView: React.FC<SharesViewProps> = ({
             <div
               key={share.id}
               onClick={() => onOpenShare(share)}
+              onContextMenu={(e) => {
+                if (onContextMenu) {
+                  onContextMenu(e, {
+                    name: share.name,
+                    uncPath: share.uncPath,
+                    isDirectory: true,
+                    isShare: true,
+                    server: share.server,
+                    share: share.name,
+                    mappedDrive: share.mappedDrive,
+                    accessStatus: share.status,
+                    accessLevel: share.accessLevel
+                  });
+                }
+              }}
               className="group bg-slate-900 hover:bg-slate-850 border border-slate-800 hover:border-blue-600/60 rounded-lg p-3.5 cursor-pointer transition shadow-sm hover:shadow-md flex flex-col justify-between"
             >
               <div>
@@ -223,6 +245,19 @@ export const SharesView: React.FC<SharesViewProps> = ({
                 </div>
 
                 <div className="flex items-center gap-1">
+                  {onOpenProperties && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onOpenProperties(share.uncPath);
+                      }}
+                      className="p-1.5 rounded bg-slate-800 hover:bg-slate-700 text-amber-400 hover:text-amber-300 transition"
+                      title="Properties (Alt+Enter)"
+                    >
+                      <Info className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
@@ -265,6 +300,21 @@ export const SharesView: React.FC<SharesViewProps> = ({
                 <tr
                   key={share.id}
                   onClick={() => onOpenShare(share)}
+                  onContextMenu={(e) => {
+                    if (onContextMenu) {
+                      onContextMenu(e, {
+                        name: share.name,
+                        uncPath: share.uncPath,
+                        isDirectory: true,
+                        isShare: true,
+                        server: share.server,
+                        share: share.name,
+                        mappedDrive: share.mappedDrive,
+                        accessStatus: share.status,
+                        accessLevel: share.accessLevel
+                      });
+                    }
+                  }}
                   className="hover:bg-slate-850 cursor-pointer transition group"
                 >
                   <td className="py-2 px-3 font-medium text-slate-200 group-hover:text-blue-300 flex items-center gap-2">
@@ -288,6 +338,15 @@ export const SharesView: React.FC<SharesViewProps> = ({
                   <td className="py-2 px-3 text-slate-400 font-mono">{share.responseTimeMs} ms</td>
                   <td className="py-2 px-3 text-right">
                     <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+                      {onOpenProperties && (
+                        <button
+                          onClick={() => onOpenProperties(share.uncPath)}
+                          className="p-1 rounded hover:bg-slate-800 text-amber-400 hover:text-amber-300 transition"
+                          title="Properties (Alt+Enter)"
+                        >
+                          <Info className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                       <button
                         onClick={(e) => handleCopy(e, share.uncPath)}
                         className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-white transition"

@@ -28,7 +28,8 @@ import {
   Layers,
   Lock,
   CornerDownRight,
-  Sparkles
+  Sparkles,
+  Info
 } from 'lucide-react';
 import {
   NetworkShare,
@@ -38,7 +39,8 @@ import {
   FileSystemEntry,
   LogEntry,
   AvailableDriveLetter,
-  DriveMappingConflict
+  DriveMappingConflict,
+  ContextMenuTarget
 } from '../types/drive.js';
 
 interface NetworkSharesManagerProps {
@@ -54,6 +56,8 @@ interface NetworkSharesManagerProps {
   logs: LogEntry[];
   onRefreshLogs: () => void;
   initialSelectedPath?: string;
+  onContextMenu?: (e: React.MouseEvent, target: ContextMenuTarget) => void;
+  onOpenProperties?: (uncPath: string) => void;
 }
 
 export const NetworkSharesManager: React.FC<NetworkSharesManagerProps> = ({
@@ -68,7 +72,9 @@ export const NetworkSharesManager: React.FC<NetworkSharesManagerProps> = ({
   onOpenInExplorer,
   logs,
   onRefreshLogs,
-  initialSelectedPath
+  initialSelectedPath,
+  onContextMenu,
+  onOpenProperties
 }) => {
   // Selected Target Path (either share root or subfolder)
   const [selectedTarget, setSelectedTarget] = useState<string>(
@@ -120,13 +126,16 @@ export const NetworkSharesManager: React.FC<NetworkSharesManagerProps> = ({
     fetchDriveLetters();
   }, [shellState]);
 
-  // Set default selection when shares arrive
+  // Set default selection when shares arrive or initialSelectedPath updates
   useEffect(() => {
-    if (shares.length > 0 && !selectedTarget) {
+    if (initialSelectedPath) {
+      setSelectedTarget(initialSelectedPath);
+      loadFolder(initialSelectedPath);
+    } else if (shares.length > 0 && !selectedTarget) {
       setSelectedTarget(shares[0].uncPath);
       loadFolder(shares[0].uncPath);
     }
-  }, [shares]);
+  }, [shares, initialSelectedPath]);
 
   // Handle Copy Path
   const handleCopy = (path: string) => {
@@ -413,6 +422,21 @@ export const NetworkSharesManager: React.FC<NetworkSharesManagerProps> = ({
                           setSelectedTarget(sh.uncPath);
                           loadFolder(sh.uncPath);
                         }}
+                        onContextMenu={(e) => {
+                          if (onContextMenu) {
+                            onContextMenu(e, {
+                              name: sh.name,
+                              uncPath: sh.uncPath,
+                              isDirectory: true,
+                              isShare: true,
+                              server: sh.server,
+                              share: sh.name,
+                              mappedDrive: sh.mappedDrive,
+                              accessStatus: sh.status || 'Accessible',
+                              accessLevel: sh.accessLevel
+                            });
+                          }
+                        }}
                         className={`flex items-center justify-between p-2 rounded cursor-pointer transition select-none ${
                           isSelected
                             ? 'bg-blue-900/40 border border-blue-600/80 text-white'
@@ -438,6 +462,18 @@ export const NetworkSharesManager: React.FC<NetworkSharesManagerProps> = ({
                             </span>
                           ) : (
                             <span className="text-slate-600 px-1">—</span>
+                          )}
+                          {onOpenProperties && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onOpenProperties(sh.uncPath);
+                              }}
+                              className="p-1 hover:bg-slate-700 text-slate-400 hover:text-white rounded"
+                              title="Properties (Alt+Enter)"
+                            >
+                              <Info className="w-3 h-3 text-amber-400" />
+                            </button>
                           )}
                           <button
                             onClick={(e) => {
@@ -481,6 +517,21 @@ export const NetworkSharesManager: React.FC<NetworkSharesManagerProps> = ({
                         setSelectedTarget(sh.uncPath);
                         loadFolder(sh.uncPath);
                       }}
+                      onContextMenu={(e) => {
+                        if (onContextMenu) {
+                          onContextMenu(e, {
+                            name: sh.name,
+                            uncPath: sh.uncPath,
+                            isDirectory: true,
+                            isShare: true,
+                            server: sh.server,
+                            share: sh.name,
+                            mappedDrive: sh.mappedDrive,
+                            accessStatus: sh.status || 'Accessible',
+                            accessLevel: sh.accessLevel
+                          });
+                        }
+                      }}
                       className={`cursor-pointer transition select-none ${
                         isSelected ? 'bg-blue-950/50 text-white' : 'hover:bg-slate-850 text-slate-300'
                       }`}
@@ -504,16 +555,30 @@ export const NetworkSharesManager: React.FC<NetworkSharesManagerProps> = ({
                         )}
                       </td>
                       <td className="py-2 px-3 text-right">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSelectedTarget(sh.uncPath);
-                            loadFolder(sh.uncPath);
-                          }}
-                          className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px]"
-                        >
-                          Select
-                        </button>
+                        <div className="flex items-center justify-end gap-1">
+                          {onOpenProperties && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onOpenProperties(sh.uncPath);
+                              }}
+                              className="p-1 hover:bg-slate-800 text-slate-400 hover:text-white rounded"
+                              title="Properties (Alt+Enter)"
+                            >
+                              <Info className="w-3.5 h-3.5 text-amber-400" />
+                            </button>
+                          )}
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedTarget(sh.uncPath);
+                              loadFolder(sh.uncPath);
+                            }}
+                            className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px]"
+                          >
+                            Select
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -567,6 +632,16 @@ export const NetworkSharesManager: React.FC<NetworkSharesManagerProps> = ({
           <div className="flex items-center gap-2 self-start md:self-auto">
             {selectedTarget && (
               <>
+                {onOpenProperties && (
+                  <button
+                    onClick={() => onOpenProperties(selectedTarget)}
+                    className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded text-amber-300 text-xs font-medium transition flex items-center gap-1"
+                    title="Properties (Alt+Enter)"
+                  >
+                    <Info className="w-3 h-3" />
+                    <span>Properties</span>
+                  </button>
+                )}
                 <button
                   onClick={() => loadFolder(selectedTarget)}
                   className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-750 border border-slate-700 rounded text-slate-200 text-xs font-medium transition"
@@ -797,6 +872,20 @@ export const NetworkSharesManager: React.FC<NetworkSharesManagerProps> = ({
                   <tr
                     key={entry.path}
                     className="hover:bg-slate-850/80 group transition cursor-pointer select-none"
+                    onContextMenu={(e) => {
+                      if (onContextMenu) {
+                        onContextMenu(e, {
+                          name: entry.name,
+                          uncPath: entry.path,
+                          isDirectory: entry.isDirectory,
+                          isShare: false,
+                          server: browseResult.server,
+                          share: browseResult.share,
+                          accessStatus: 'Accessible',
+                          accessLevel: 'ReadWrite'
+                        });
+                      }
+                    }}
                     onDoubleClick={() => {
                       if (entry.isDirectory) {
                         loadFolder(entry.path);
@@ -833,37 +922,51 @@ export const NetworkSharesManager: React.FC<NetworkSharesManagerProps> = ({
                     </td>
 
                     <td className="py-2 px-3 text-right">
-                      {entry.isDirectory ? (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSelectedTarget(entry.path);
-                            setMappingMessage({
-                              text: `Selected subfolder "${entry.name}" as mapping target.`,
-                              type: 'info'
-                            });
-                          }}
-                          className={`px-2 py-0.5 rounded text-[10px] font-medium border transition ${
-                            selectedTarget === entry.path
-                              ? 'bg-blue-600 text-white border-blue-500'
-                              : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'
-                          }`}
-                          title="Select this subfolder as the Windows drive letter mount target"
-                        >
-                          {selectedTarget === entry.path ? 'Selected Target' : 'Select Target'}
-                        </button>
-                      ) : (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onOpenInExplorer(entry.path);
-                          }}
-                          className="p-1 text-slate-400 hover:text-white"
-                          title="Open with default Windows application"
-                        >
-                          <ExternalLink className="w-3.5 h-3.5" />
-                        </button>
-                      )}
+                      <div className="flex items-center justify-end gap-1">
+                        {onOpenProperties && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onOpenProperties(entry.path);
+                            }}
+                            className="p-1 hover:bg-slate-800 text-slate-400 hover:text-white rounded"
+                            title="Properties (Alt+Enter)"
+                          >
+                            <Info className="w-3.5 h-3.5 text-amber-400" />
+                          </button>
+                        )}
+                        {entry.isDirectory ? (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedTarget(entry.path);
+                              setMappingMessage({
+                                text: `Selected subfolder "${entry.name}" as mapping target.`,
+                                type: 'info'
+                              });
+                            }}
+                            className={`px-2 py-0.5 rounded text-[10px] font-medium border transition ${
+                              selectedTarget === entry.path
+                                ? 'bg-blue-600 text-white border-blue-500'
+                                : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'
+                            }`}
+                            title="Select this subfolder as the Windows drive letter mount target"
+                          >
+                            {selectedTarget === entry.path ? 'Selected Target' : 'Select Target'}
+                          </button>
+                        ) : (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onOpenInExplorer(entry.path);
+                            }}
+                            className="p-1 text-slate-400 hover:text-white"
+                            title="Open with default Windows application"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}

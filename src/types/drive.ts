@@ -181,3 +181,50 @@ export interface AvailableDriveLetter {
   currentTarget?: string;
 }
 
+/**
+ * Phase 3 Completion: Real Properties & Right-Click Context Menu Types
+ */
+export interface ShareProperties {
+  name: string;
+  uncPath: string;
+  server: string;
+  share: string;
+  subPath?: string;
+  itemType: 'Share' | 'Folder' | 'File';
+  accessStatus: 'Accessible' | 'Inaccessible' | 'Access Denied' | 'Offline';
+  accessLevel: 'Read' | 'ReadWrite' | 'None';
+  isReadable: boolean;
+  isWritable: boolean;
+  mappedDrive?: string | null;
+  connectionStatus: 'Connected' | 'Disconnected' | 'Online' | 'Offline' | 'Unreachable';
+  availability: 'Available on Network' | 'Offline' | 'Access Restricted';
+  locationType: 'Remote SMB Network Share' | 'Remote Active Directory Share Directory' | 'Remote Network File';
+  sizeBytes?: number;
+  formattedSize?: string;
+  folderCount?: number;
+  fileCount?: number;
+  createdTime?: string;
+  modifiedTime?: string;
+  attributes?: string[];
+  denialReason?: string;
+  description?: string;
+  securityContext?: {
+    user: string;
+    domain: string;
+    authType: string;
+    verifiedPermissions: string;
+  };
+}
+
+export interface ContextMenuTarget {
+  name: string;
+  uncPath: string;
+  isDirectory: boolean;
+  isShare?: boolean;
+  server?: string;
+  share?: string;
+  mappedDrive?: string | null;
+  accessStatus?: 'Accessible' | 'Inaccessible' | 'Access Denied' | 'Offline' | ShareStatus;
+  accessLevel?: 'Read' | 'ReadWrite' | 'None';
+}
+
