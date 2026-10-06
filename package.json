@@ -1,14 +1,17 @@
 {
-  "name": "react-example",
+  "name": "bun-drive",
+  "version": "1.0.0",
+  "description": "Windows File Explorer Active Directory network share discovery and integration engine.",
   "private": true,
-  "version": "0.0.0",
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
     "build": "vite build",
+    "build:exe": "bun build --compile --target=bun-windows-x64 --production --windows-hide-console src/standalone.ts --outfile build/staging/Bun-Drive.exe",
+    "build:installer": "bun scripts/build-windows-installer.ts",
     "start": "node server.ts",
     "preview": "vite preview",
-    "clean": "rm -rf dist",
+    "clean": "rm -rf dist build dist-installer installer/bun-drive.nsi",
     "lint": "tsc --noEmit",
     "test": "npx tsx --test test/*.test.ts"
   },

@@ -83,7 +83,7 @@ export class ShellIntegrationService {
   public async getStatus(): Promise<ShellIntegrationState> {
     if (NativeBridge.isWindowsHost()) {
       try {
-        const scriptPath = path.resolve(process.cwd(), 'scripts', 'bun-drive-shell-mount.ps1');
+        const scriptPath = NativeBridge.getScriptPath('bun-drive-shell-mount.ps1');
         const raw = await NativeBridge.runPowerShell(`& '${scriptPath}' -Action Status`, 10000);
         const parsed = JSON.parse(raw);
         this.isRegistered = Boolean(parsed.isRegisteredInExplorer);
@@ -129,7 +129,7 @@ export class ShellIntegrationService {
 
     if (NativeBridge.isWindowsHost()) {
       try {
-        const scriptPath = path.resolve(process.cwd(), 'scripts', 'bun-drive-shell-mount.ps1');
+        const scriptPath = NativeBridge.getScriptPath('bun-drive-shell-mount.ps1');
         const jsonPayload = JSON.stringify(targetShares).replace(/'/g, "''");
         const raw = await NativeBridge.runPowerShell(
           `& '${scriptPath}' -Action Register -SharesJson '${jsonPayload}'`,
@@ -170,7 +170,7 @@ export class ShellIntegrationService {
 
     if (NativeBridge.isWindowsHost()) {
       try {
-        const scriptPath = path.resolve(process.cwd(), 'scripts', 'bun-drive-shell-mount.ps1');
+        const scriptPath = NativeBridge.getScriptPath('bun-drive-shell-mount.ps1');
         await NativeBridge.runPowerShell(`& '${scriptPath}' -Action Unregister`, 10000);
       } catch (err) {
         logger.error('ShellIntegration', 'Failed to unregister via PowerShell', err);
@@ -218,7 +218,7 @@ export class ShellIntegrationService {
 
     if (NativeBridge.isWindowsHost()) {
       try {
-        const scriptPath = path.resolve(process.cwd(), 'scripts', 'bun-drive-shell-mount.ps1');
+        const scriptPath = NativeBridge.getScriptPath('bun-drive-shell-mount.ps1');
         const jsonPayload = JSON.stringify(authorizedShares).replace(/'/g, "''");
         const raw = await NativeBridge.runPowerShell(
           `& '${scriptPath}' -Action Sync -SharesJson '${jsonPayload}'`,
@@ -394,7 +394,7 @@ export class ShellIntegrationService {
     logger.info('ShellIntegration', `Mapping network drive ${cleanLetter} -> ${uncPath} (Persistent: ${persistent})`);
 
     if (NativeBridge.isWindowsHost()) {
-      const scriptPath = path.resolve(process.cwd(), 'scripts', 'bun-drive-shell-mount.ps1');
+      const scriptPath = NativeBridge.getScriptPath('bun-drive-shell-mount.ps1');
       await NativeBridge.runPowerShell(
         `& '${scriptPath}' -Action MapDrive -DriveLetter '${cleanLetter}' -UncPath '${uncPath}' -Persistent $${persistent} -ReplaceExisting $${replaceExisting}`,
         10000
@@ -433,7 +433,7 @@ export class ShellIntegrationService {
     logger.info('ShellIntegration', `Unmapping network drive ${cleanLetter}`);
 
     if (NativeBridge.isWindowsHost()) {
-      const scriptPath = path.resolve(process.cwd(), 'scripts', 'bun-drive-shell-mount.ps1');
+      const scriptPath = NativeBridge.getScriptPath('bun-drive-shell-mount.ps1');
       await NativeBridge.runPowerShell(
         `& '${scriptPath}' -Action UnmapDrive -DriveLetter '${cleanLetter}'`,
         10000

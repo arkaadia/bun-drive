@@ -60,6 +60,24 @@ export class NativeBridge {
   }
 
   /**
+   * Resolves the filesystem path to a script in scripts/, checking
+   * current working directory, application executable directory, and environment.
+   */
+  public static getScriptPath(scriptName: string): string {
+    const cwdPath = path.resolve(process.cwd(), 'scripts', scriptName);
+    if (fs.existsSync(cwdPath)) return cwdPath;
+    const execDir = path.dirname(process.execPath || '');
+    const execPath = path.resolve(execDir, 'scripts', scriptName);
+    if (fs.existsSync(execPath)) return execPath;
+    const envAppDir = process.env.BUN_DRIVE_APP_DIR;
+    if (envAppDir) {
+      const appPath = path.resolve(envAppDir, 'scripts', scriptName);
+      if (fs.existsSync(appPath)) return appPath;
+    }
+    return cwdPath;
+  }
+
+  /**
    * Execute `gpupdate /force` using the native Windows process execution mechanism
    * or cross-platform simulated execution with comprehensive result capturing.
    */
@@ -388,7 +406,7 @@ export class NativeBridge {
 
     if (this.isWindows) {
       try {
-        const scriptPath = path.resolve(process.cwd(), 'scripts', 'bun-drive-discovery.ps1');
+        const scriptPath = this.getScriptPath('bun-drive-discovery.ps1');
         let psArgs = `& '${scriptPath}'`;
         if (targetServers && targetServers.length > 0) {
           const formatted = targetServers.map(s => `'${s}'`).join(',');

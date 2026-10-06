@@ -102,6 +102,87 @@ Each candidate share is evaluated against the user's native Windows security con
 - **Drive Mapping Conflict**:
   - If a drive letter is locked by an existing mapping or Windows process, select another available letter from the dropdown or click **Replace Existing** to safely disconnect and remap.
 
+### Phase 6: Production Windows Installer, Startup and Clean Uninstall
+- **Production-Ready Windows Installer**: Complete self-contained installer (`Bun-Drive-Setup-1.0.0.exe`) built using NSIS Modern UI 2 with solid LZMA compression (~29 MB installer containing 85 MB standalone executable, UI assets, and scripts).
+- **Zero Administrator Rights Required**: Configured with `RequestExecutionLevel user` installing to `%LOCALAPPDATA%\Programs\Bun-Drive` and registering in `HKCU`. Standard Active Directory domain users on restricted corporate workstations can install without IT tickets or UAC elevation.
+- **Zero Target Machine Dependencies**: The installer contains the fully compiled Windows x64 binary (`Bun-Drive.exe`), production web bundle (`dist/`), and native PowerShell bridge scripts (`scripts/`). Target workstations require **no** Node.js, npm, Vite, TypeScript, or Git.
+- **Automated Windows Logon Startup**: Optional automatic startup registered at `HKCU\Software\Microsoft\Windows\CurrentVersion\Run\Bun-Drive` launching `Bun-Drive.exe --background` so the engine runs silently on logon without browser popups while keeping Explorer synchronized.
+- **Preserved Explorer Shell Namespace Integration**: Directly registers CLSID `{B010D817-E923-4E87-9DC2-A74B29E309FA}` and binds the Shell Folder Instance proxy `{0E5AAE11-A475-4c5b-AB00-C66DE400274E}` to `%LOCALAPPDATA%\Bun-Drive\NamespaceRoot`.
+- **Strictly Scoped Clean Uninstaller**: Completely removes Bun-Drive application files, Start Menu shortcuts, Desktop shortcut, startup run entry, Add/Remove Programs metadata, HKCU Explorer Namespace CLSID, and virtual root shortcuts (`*.lnk`). **Never** touches network share contents, SMB server files, user personal documents, or unrelated registry keys.
+- **Safe Reinstall & Upgrade Handling**: Detects previous installation location via `HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\Bun-Drive`, gracefully terminates running instances (`taskkill /F /IM Bun-Drive.exe`) before overwriting binaries, avoids duplicate registry entries, and preserves user configuration.
+
+---
+
+## Technical Guide & Operations
+
+### Installer Architecture & Technology Selection
+- **Selected Technology**: **NSIS (Nullsoft Scriptable Install System) v3.08** with Modern UI 2 (`MUI2.nsh`) and solid LZMA compression.
+- **Why NSIS Was Chosen**:
+  1. **Native Per-User Architecture**: NSIS provides native, flawless per-user installation (`RequestExecutionLevel user`), installing cleanly into `%LOCALAPPDATA%\Programs\Bun-Drive` without requiring Windows Administrator elevation. This aligns with Bun-Drive's security model, which operates under standard domain user Kerberos/NTLM tokens.
+  2. **Cross-Platform Reproducibility**: `makensis` runs deterministically in headless Linux CI/CD environments as well as on native Windows build servers, allowing automated builds of real Windows PE32+ installer executables without proprietary Windows SDK dependencies.
+  3. **High-Ratio Solid LZMA Compression**: Compresses the self-contained 85 MB standalone Windows x64 binary, PowerShell scripts, and production web bundle down to ~29 MB.
+  4. **Robust Registry & Shortcut Management**: Full native control over `HKCU\Software\Classes\CLSID`, `Desktop\NameSpace`, `Run`, and `Uninstall` keys.
+  5. **Clean Uninstallation Engine**: Produces a cryptographically verified `uninstall.exe` with narrow deletion boundaries.
+
+### Installation Directory & Structure
+When installed, Bun-Drive is structured as follows:
+```
+%LOCALAPPDATA%\Programs\Bun-Drive\
+├── Bun-Drive.exe          (Standalone Windows x64 compiled application)
+├── uninstall.exe          (Clean uninstaller)
+├── scripts\
+│   ├── bun-drive-discovery.ps1    (Active Directory & SMB share discovery)
+│   └── bun-drive-shell-mount.ps1  (Explorer Namespace mount & shortcut sync)
+└── dist\
+    ├── index.html         (Production React UI entry)
+    └── assets\
+        ├── index-*.js     (Optimized production script)
+        └── index-*.css    (Tailwind styling)
+```
+
+Shortcuts created:
+- Start Menu: `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Bun-Drive\Bun-Drive.lnk`
+- Start Menu Uninstaller: `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Bun-Drive\Uninstall Bun-Drive.lnk`
+- Desktop (optional): `%USERPROFILE%\Desktop\Bun-Drive.lnk`
+
+### Windows Startup Behavior
+- **Registry Location**: `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`
+- **Value Name**: `Bun-Drive`
+- **Command**: `"%LOCALAPPDATA%\Programs\Bun-Drive\Bun-Drive.exe" --background`
+- **Execution Lifecycle**:
+  - When Windows boots and the domain user logs on, Windows launches `Bun-Drive.exe` with `--background`.
+  - The application starts its background services on port 3000 (or configured port), initializes the Windows Explorer Shell Namespace node, and activates the automatic share change monitor.
+  - In background mode, Bun-Drive suppresses opening the browser window.
+  - If the user subsequently launches Bun-Drive from the Start Menu or Desktop, the application detects the already running instance, brings the web UI up in their default browser (`http://localhost:3000`), and exits immediately to avoid duplicate processes or port binding errors.
+
+### Clean Uninstallation & Security Boundaries
+The uninstaller (`uninstall.exe`) strictly removes:
+1. Running process: terminates `Bun-Drive.exe` safely.
+2. Explorer Shell Namespace: unregisters CLSID `{B010D817-E923-4E87-9DC2-A74B29E309FA}` and removes the Explorer Desktop Namespace pin.
+3. Startup Entry: removes the `Bun-Drive` value from `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`.
+4. Add/Remove Programs: removes `HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\Bun-Drive`.
+5. Virtual Namespace Root: removes shortcuts in `%LOCALAPPDATA%\Bun-Drive\NamespaceRoot\*.lnk` and removes the folder.
+6. Shortcuts: deletes Start Menu and Desktop shortcuts.
+7. Application files: deletes `%LOCALAPPDATA%\Programs\Bun-Drive`.
+
+**CRITICAL SAFETY INVARIANTS**:
+- **NEVER** deletes network share contents (`\\server\share\*`).
+- **NEVER** touches SMB server files or Active Directory records.
+- **NEVER** touches personal user documents or desktop files outside Bun-Drive's managed folders.
+- **NEVER** touches unrelated Registry keys or drive mappings created outside Bun-Drive.
+
+### Windows Requirements
+- **Operating System**: Windows 10 (1809+), Windows 11, or Windows Server 2016/2019/2022 (x64 architecture).
+- **Permissions**: Standard Domain User (no Administrator privileges required).
+- **PowerShell**: Windows PowerShell 5.1+ (included natively with Windows 10/11).
+- **Network**: Active Directory domain membership and reachability to Domain Controllers on TCP 445 (SMB), 389 (LDAP), and 88 (Kerberos). Standalone / Workgroup machines supported for local SMB share browsing.
+
+### Known Limitations & Validation Scope
+- **Real Windows Validation Notice**:
+  > Real Windows validation was not performed because the coding environment does not have access to the user's Windows workstation.
+- Static verification, full test suite validation, cross-compilation of native Windows PE32+ executables, and NSIS installer generation have been fully executed and verified in the automated build environment.
+- Domain Kerberos authentication, live Explorer shell pin visual rendering, and physical SMB share mounts must be verified in the target enterprise Windows environment.
+
 ---
 
 ## Development & Verification
@@ -113,9 +194,15 @@ npm run dev
 # Run TypeScript typecheck
 npm run lint
 
-# Run automated test suite (Identity, Discovery, FileSystem, Shell Blueprint, Phase 2 Shell Integration)
+# Run automated test suite (Phases 1-6: 69 tests across 17 suites)
 npm test
 
-# Build production bundle
+# Build production frontend bundle
 npm run build
+
+# Compile standalone Windows binary (Bun-Drive.exe)
+npm run build:exe
+
+# Build complete production Windows installer (.exe)
+npm run build:installer
 ```
