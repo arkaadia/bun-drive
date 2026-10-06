@@ -1,0 +1,6 @@
+{
+  "name": "Bun-Drive",
+  "description": "Windows File Explorer Active Directory network share discovery and integration engine.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
