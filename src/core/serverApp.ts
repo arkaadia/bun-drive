@@ -191,8 +191,12 @@ export function createBunDriveApp(): Express {
   app.get('/api/browse', async (req: Request, res: Response) => {
     try {
       const targetPath = req.query.path as string;
-      if (!targetPath) {
+      if (!targetPath || typeof targetPath !== 'string') {
         res.status(400).json({ error: 'Missing path query parameter' });
+        return;
+      }
+      if (/[<>"|`*;\r\n]/.test(targetPath)) {
+        res.status(400).json({ error: 'Path contains invalid or forbidden characters' });
         return;
       }
       const browseResult = await fileSystemService.browsePath(targetPath);
@@ -208,8 +212,12 @@ export function createBunDriveApp(): Express {
   app.get('/api/properties', async (req: Request, res: Response) => {
     try {
       const targetPath = req.query.path as string;
-      if (!targetPath) {
+      if (!targetPath || typeof targetPath !== 'string') {
         res.status(400).json({ error: 'Missing path query parameter' });
+        return;
+      }
+      if (/[<>"|`*;\r\n]/.test(targetPath)) {
+        res.status(400).json({ error: 'Path contains invalid or forbidden characters' });
         return;
       }
       const shellStatus = await shellIntegrationService.getStatus();
@@ -227,8 +235,12 @@ export function createBunDriveApp(): Express {
   app.post('/api/open-in-explorer', async (req: Request, res: Response) => {
     try {
       const { path: targetPath } = req.body;
-      if (!targetPath) {
+      if (!targetPath || typeof targetPath !== 'string') {
         res.status(400).json({ error: 'Missing path in request body' });
+        return;
+      }
+      if (/[<>"|`*;\r\n]/.test(targetPath)) {
+        res.status(400).json({ error: 'Path contains invalid or forbidden characters' });
         return;
       }
       const success = await fileSystemService.openInExplorer(targetPath);
@@ -369,8 +381,8 @@ export function createBunDriveApp(): Express {
   app.post('/api/test-server', async (req: Request, res: Response) => {
     try {
       const { server } = req.body;
-      if (!server) {
-        res.status(400).json({ error: 'Server name required' });
+      if (!server || typeof server !== 'string' || !/^[a-zA-Z0-9.\-_]+$/.test(server)) {
+        res.status(400).json({ error: 'Valid server name required (alphanumeric, dot, dash, underscore)' });
         return;
       }
       const shares = await discoveryService.probeServer(server);

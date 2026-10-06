@@ -376,6 +376,9 @@ export class ShellIntegrationService {
     if (!uncPath.startsWith('\\\\')) {
       throw new Error(`Invalid UNC path "${uncPath}". Must start with \\\\Server\\Share.`);
     }
+    if (/[<>"|`*;\r\n]/.test(uncPath)) {
+      throw new Error(`Invalid characters in UNC path: "${uncPath}".`);
+    }
 
     // Check conflict with existing mapping
     const conflict = this.checkDriveConflict(cleanLetter);
@@ -395,8 +398,9 @@ export class ShellIntegrationService {
 
     if (NativeBridge.isWindowsHost()) {
       const scriptPath = NativeBridge.getScriptPath('bun-drive-shell-mount.ps1');
+      const escapedUnc = uncPath.replace(/'/g, "''");
       await NativeBridge.runPowerShell(
-        `& '${scriptPath}' -Action MapDrive -DriveLetter '${cleanLetter}' -UncPath '${uncPath}' -Persistent $${persistent} -ReplaceExisting $${replaceExisting}`,
+        `& '${scriptPath}' -Action MapDrive -DriveLetter '${cleanLetter}' -UncPath '${escapedUnc}' -Persistent $${persistent} -ReplaceExisting $${replaceExisting}`,
         10000
       );
     }
@@ -430,6 +434,9 @@ export class ShellIntegrationService {
    */
   public async unmapDriveLetter(driveLetter: string): Promise<boolean> {
     const cleanLetter = driveLetter.trim().toUpperCase().replace(/:$/, '') + ':';
+    if (!/^[D-Z]:$/.test(cleanLetter)) {
+      throw new Error(`Invalid drive letter "${driveLetter}". Choose a letter between D: and Z:.`);
+    }
     logger.info('ShellIntegration', `Unmapping network drive ${cleanLetter}`);
 
     if (NativeBridge.isWindowsHost()) {

@@ -713,16 +713,33 @@ export class NativeBridge {
   }
 
   /**
-   * Launch Windows File Explorer to a given UNC path
+   * Launch Windows File Explorer to a given UNC path safely
    */
   public static async openInExplorer(uncPath: string): Promise<boolean> {
     logger.info('NativeBridge', `Opening path in File Explorer: ${uncPath}`);
+    if (!uncPath || typeof uncPath !== 'string') {
+      logger.error('NativeBridge', 'Invalid or empty path supplied to openInExplorer');
+      return false;
+    }
+    const sanitized = uncPath.trim();
+    // Validate path against safe characters (no quotes, backticks, pipes, semicolons, angle brackets, control chars)
+    if (/[<>"|`*;\r\n]/.test(sanitized)) {
+      logger.error('NativeBridge', `Dangerous path characters detected: ${sanitized}`);
+      return false;
+    }
     if (this.isWindows) {
       try {
-        await execAsync(`explorer.exe "${uncPath}"`);
-        return true;
+        return new Promise((resolve) => {
+          const child = spawn('explorer.exe', [sanitized], {
+            detached: true,
+            stdio: 'ignore',
+            windowsHide: false
+          });
+          child.unref();
+          resolve(true);
+        });
       } catch (err) {
-        logger.error('NativeBridge', `Failed to launch explorer.exe for ${uncPath}`, err);
+        logger.error('NativeBridge', `Failed to launch explorer.exe for ${sanitized}`, err);
         return false;
       }
     }

@@ -65,6 +65,9 @@ describe('Phase 6: Production Windows Installer, Startup and Uninstall', () => {
 
     // Verify source files exist in repository
     assert.ok(fs.existsSync(path.resolve(process.cwd(), 'src/standalone.ts')), 'standalone.ts must exist');
+    if (!fs.existsSync(path.resolve(process.cwd(), 'dist/index.html'))) {
+      execSync('npm run build', { stdio: 'ignore' });
+    }
     assert.ok(fs.existsSync(path.resolve(process.cwd(), 'dist/index.html')), 'dist/index.html must exist');
   });
 

@@ -38,6 +38,12 @@ export class WindowsFileSystemService {
    * Browse a UNC path
    */
   public async browsePath(targetPath: string): Promise<BrowseResult> {
+    if (!targetPath || typeof targetPath !== 'string') {
+      throw new Error('Target path must be a non-empty string');
+    }
+    if (/[<>"|`*;\r\n]/.test(targetPath)) {
+      throw new Error('Target path contains invalid or forbidden characters');
+    }
     const { server, share, subPath } = WindowsFileSystemService.parseUncPath(targetPath);
     logger.info('FileSystem', `Browsing path: ${targetPath}`);
 
@@ -339,6 +345,12 @@ export class WindowsFileSystemService {
    * Phase 3: Retrieve full Windows properties for a UNC path, share, or folder
    */
   public async getProperties(targetPath: string, mappedDriveLetter?: string | null): Promise<ShareProperties> {
+    if (!targetPath || typeof targetPath !== 'string') {
+      throw new Error('Target path must be a non-empty string');
+    }
+    if (/[<>"|`*;\r\n]/.test(targetPath)) {
+      throw new Error('Target path contains invalid or forbidden characters');
+    }
     const { server, share, subPath } = WindowsFileSystemService.parseUncPath(targetPath);
     const itemName = subPath ? subPath.split('\\').pop() || share : share || server;
     const isRootShare = !subPath && Boolean(share);

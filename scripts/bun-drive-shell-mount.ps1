@@ -232,17 +232,21 @@ if ($Action -eq 'Register') {
     Unregister-ShellNamespace
 } elseif ($Action -eq 'MapDrive') {
     if ($DriveLetter -and $UncPath) {
-        $cleanLetter = if ($DriveLetter.EndsWith(':')) { $DriveLetter } else { "${DriveLetter}:" }
-        if ($ReplaceExisting) {
-            net use $cleanLetter /delete /y 2>&1 | Out-Null
+        $cleanLetter = if ($DriveLetter.EndsWith(':')) { $DriveLetter.ToUpper() } else { "$($DriveLetter.ToUpper()):" }
+        if ($cleanLetter -match '^[D-Z]:$' -and $UncPath -match '^\\\\[^<>"|*?;\r\n]+$') {
+            if ($ReplaceExisting) {
+                net use $cleanLetter /delete /y 2>&1 | Out-Null
+            }
+            $persistFlag = if ($Persistent) { "/persistent:yes" } else { "/persistent:no" }
+            net use $cleanLetter "$UncPath" $persistFlag 2>&1 | Out-Null
         }
-        $persistFlag = if ($Persistent) { "/persistent:yes" } else { "/persistent:no" }
-        net use $cleanLetter "$UncPath" $persistFlag 2>&1 | Out-Null
     }
 } elseif ($Action -eq 'UnmapDrive') {
     if ($DriveLetter) {
-        $cleanLetter = if ($DriveLetter.EndsWith(':')) { $DriveLetter } else { "${DriveLetter}:" }
-        net use $cleanLetter /delete /y 2>&1 | Out-Null
+        $cleanLetter = if ($DriveLetter.EndsWith(':')) { $DriveLetter.ToUpper() } else { "$($DriveLetter.ToUpper()):" }
+        if ($cleanLetter -match '^[D-Z]:$') {
+            net use $cleanLetter /delete /y 2>&1 | Out-Null
+        }
     }
 }
 

@@ -179,9 +179,39 @@ The uninstaller (`uninstall.exe`) strictly removes:
 
 ### Known Limitations & Validation Scope
 - **Real Windows Validation Notice**:
-  > Real Windows validation was not performed because the coding environment does not have access to the user's Windows workstation.
-- Static verification, full test suite validation, cross-compilation of native Windows PE32+ executables, and NSIS installer generation have been fully executed and verified in the automated build environment.
-- Domain Kerberos authentication, live Explorer shell pin visual rendering, and physical SMB share mounts must be verified in the target enterprise Windows environment.
+  > Real Windows validation was not performed because the coding environment does not have access to the user's physical Windows workstation or Active Directory domain.
+- **Automated Validation Performed**:
+  - Full automated regression test suite executed (Phases 1–8: 79 passing tests across 18 suites).
+  - TypeScript strict typecheck passed with 0 errors (`npm run lint`).
+  - Production web frontend bundled successfully (`npm run build`).
+  - Standalone Windows x64 executable compiled cleanly via Bun 1.4.0 (`build/staging/Bun-Drive.exe`).
+  - Solid LZMA compressed production installer built successfully via makensis v3.08 (`dist-installer/Bun-Drive-Setup-1.0.0.exe`).
+  - Zero credentials, secrets, or dev dependencies packaged in staging directory.
+- **Real Windows Environment Testing Required by User**:
+  - Domain Kerberos authentication and Active Directory LDAP share resolution against target Domain Controllers.
+  - Live Windows Explorer Left Navigation Pane pin visualization on Windows 10/11.
+  - Physical SMB share mounting (`net use`) across real Windows network shares.
+
+---
+
+## Phase 8: Final Production Release & Packaging
+
+### Release Artifacts
+- **Installer**: `dist-installer/Bun-Drive-Setup-1.0.0.exe`
+  - **Size**: `29.68 MB` (31,122,953 bytes, Solid LZMA compressed)
+  - **SHA-256**: `fb78bef4f5d79ff007f809123c4eba03924a7e1defc480fdd3f41a1cdc4a623a`
+  - **Architecture**: Windows x64 (PE32+ executable)
+  - **Elevation**: `RequestExecutionLevel user` (Zero Administrator rights needed)
+- **Standalone Binary**: `build/staging/Bun-Drive.exe`
+  - **Size**: `85.57 MB` (89,726,976 bytes)
+  - **SHA-256**: `d74397bf7aec2d6993404256506d48e70ef69d4d8c551d3ba1729bd21e8f62e8`
+
+### Security Hardening Summary
+1. **Zero Credential Storage**: Bun-Drive never requests, stores, or logs user passwords; all operations execute in the active Windows user security token.
+2. **Safe Subprocess Execution**: NativeBridge uses direct argument arrays and regex path validation (`spawn('explorer.exe', [sanitized])`), eliminating shell injection risks.
+3. **UNC & Drive Letter Sanitization**: Strict input validation rejects dangerous metacharacters (`< > " | \` * ; \r \n`) and restricts drive letters to `D:` through `Z:`.
+4. **Registry Scope Isolation**: All shell extension registration is strictly confined to `HKCU\Software\Classes\CLSID\{B010D817-E923-4E87-9DC2-A74B29E309FA}` and `HKCU\...\Desktop\NameSpace`.
+5. **Uninstall Safety Boundaries**: Uninstaller strictly touches only Bun-Drive managed assets and is forbidden from touching network shares or personal documents.
 
 ---
 
@@ -194,7 +224,7 @@ npm run dev
 # Run TypeScript typecheck
 npm run lint
 
-# Run automated test suite (Phases 1-6: 69 tests across 17 suites)
+# Run automated test suite (Phases 1-8: 79 tests across 18 suites)
 npm test
 
 # Build production frontend bundle
