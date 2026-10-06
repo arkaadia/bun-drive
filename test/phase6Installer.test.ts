@@ -170,6 +170,7 @@ describe('Phase 6: Production Windows Installer, Startup and Uninstall', () => {
   // 10. Registry configuration definitions where statically verifiable
   test('10. Registry definitions statically match Explorer Namespace CLSID and properties', () => {
     const nsi = InstallerBlueprintRegistry.generateNsisScript();
+    assert.ok(nsi.includes('SetRegView 64'), 'Must configure SetRegView 64 for native 64-bit Windows registry view');
     assert.ok(nsi.includes(`!define PRODUCT_CLSID "${BUN_DRIVE_CLSID}"`));
     assert.ok(nsi.includes('WriteRegStr HKCU "Software\\Classes\\CLSID\\${PRODUCT_CLSID}"'));
     assert.ok(nsi.includes('System.IsPinnedToNameSpaceTree'));

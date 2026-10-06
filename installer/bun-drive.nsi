@@ -57,6 +57,7 @@ Var EnableStartup
 Var RegisterExplorer
 
 Function .onInit
+  SetRegView 64
   ; Detect prior installation to support clean upgrades/reinstalls
   ReadRegStr $0 HKCU "${PRODUCT_UNINST_KEY}" "InstallLocation"
   ${If} $0 != ""
@@ -102,6 +103,7 @@ FunctionEnd
 ; Installation Section
 ; ==============================================================================
 Section "MainSection" SEC01
+  SetRegView 64
   ; Terminate any existing running instance before replacing files (Upgrade safe)
   DetailPrint "Checking for running instances of Bun-Drive..."
   nsExec::Exec 'taskkill /F /IM Bun-Drive.exe'
@@ -206,6 +208,7 @@ SectionEnd
 ; Strictly scoped: NEVER deletes network share contents, SMB files, or user data.
 ; ==============================================================================
 Section "Uninstall"
+  SetRegView 64
   DetailPrint "Stopping Bun-Drive process..."
   nsExec::Exec 'taskkill /F /IM Bun-Drive.exe'
   Sleep 500

@@ -41,6 +41,21 @@ $clsidRegPath = "HKCU:\Software\Classes\CLSID\$CLSID"
 $namespaceRegPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Desktop\NameSpace\$CLSID"
 $hideIconsRegPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\HideDesktopIcons\NewStartPanel"
 
+function Update-ExplorerCache {
+    try {
+        Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+public class NativeShell {
+    [DllImport("shell32.dll")]
+    public static extern void SHChangeNotify(int wEventId, int uFlags, IntPtr dwItem1, IntPtr dwItem2);
+}
+"@ -ErrorAction SilentlyContinue
+
+        [NativeShell]::SHChangeNotify(0x08000000, 0, [IntPtr]::Zero, [IntPtr]::Zero)
+    } catch {}
+}
+
 function Ensure-VirtualRoot {
     if (-not (Test-Path -Path $VIRTUAL_ROOT)) {
         New-Item -Path $VIRTUAL_ROOT -ItemType Directory -Force | Out-Null
@@ -107,6 +122,9 @@ function Register-ShellNamespace {
         New-Item -Path $hideIconsRegPath -Force | Out-Null
     }
     Set-ItemProperty -Path $hideIconsRegPath -Name $CLSID -Value 1 -Type DWord
+
+    # Notify Windows Explorer of shell extension association update
+    Update-ExplorerCache
 }
 
 function Unregister-ShellNamespace {
@@ -122,6 +140,9 @@ function Unregister-ShellNamespace {
     if (Test-Path $VIRTUAL_ROOT) {
         Get-ChildItem -Path $VIRTUAL_ROOT -Filter "*.lnk" -Force | Remove-Item -Force
     }
+
+    # Notify Windows Explorer of shell namespace removal
+    Update-ExplorerCache
 }
 
 function Sync-VirtualShortcuts {
@@ -133,8 +154,9 @@ function Sync-VirtualShortcuts {
 
     foreach ($sh in $SharesList) {
         if (-not $sh.isAccessible) { continue }
-        $safeServer = ($sh.server -split '\.')[0]
-        $shortcutName = "$($sh.name) ($safeServer).lnk"
+        $cleanName = ($sh.name -replace '[\/\\:*?"<>|]', '_').Trim()
+        $safeServer = (($sh.server -split '\.')[0] -replace '[\/\\:*?"<>|]', '_').Trim()
+        $shortcutName = "$cleanName ($safeServer).lnk"
         $shortcutFull = Join-Path $VIRTUAL_ROOT $shortcutName
         $expectedFiles[$shortcutName] = $true
 
@@ -152,6 +174,9 @@ function Sync-VirtualShortcuts {
             Remove-Item -Path $file.FullName -Force
         }
     }
+
+    # Notify Windows Explorer of directory changes
+    Update-ExplorerCache
 }
 
 function Get-MappedDrives {
