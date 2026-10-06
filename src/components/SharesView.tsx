@@ -13,20 +13,23 @@ import {
   Lock, 
   Clock, 
   ArrowRight,
-  Info,
-  Layers
+  Layers,
+  HardDrive,
+  FolderSync
 } from 'lucide-react';
-import { NetworkShare, WindowsIdentity } from '../types/drive.js';
+import { NetworkShare, WindowsIdentity, ShellIntegrationState } from '../types/drive.js';
 
 interface SharesViewProps {
   shares: NetworkShare[];
   inaccessibleCount: number;
   onOpenShare: (share: NetworkShare) => void;
   onOpenInExplorer: (uncPath: string) => void;
-  onOpenDiagnostics: () => void;
+  onOpenDiagnostics: (tab?: 'identity' | 'logs' | 'shell' | 'drives' | 'probe') => void;
   viewMode: 'tiles' | 'details';
   identity: WindowsIdentity | null;
   searchQuery: string;
+  shellState: ShellIntegrationState | null;
+  onQuickSyncShell: () => void;
 }
 
 export const SharesView: React.FC<SharesViewProps> = ({
@@ -38,6 +41,8 @@ export const SharesView: React.FC<SharesViewProps> = ({
   viewMode,
   identity,
   searchQuery,
+  shellState,
+  onQuickSyncShell,
 }) => {
   const [copiedId, setCopiedId] = React.useState<string | null>(null);
 
@@ -82,11 +87,37 @@ export const SharesView: React.FC<SharesViewProps> = ({
           </p>
         </div>
 
-        {/* Security badge & Filtered counter */}
-        <div className="flex items-center gap-2">
+        {/* Security badge, Shell Mount & Filtered counter */}
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={() => onOpenDiagnostics('shell')}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-mono border transition ${
+              shellState?.isRegisteredInExplorer
+                ? 'bg-emerald-950/50 border-emerald-800/70 text-emerald-300 hover:bg-emerald-950/80'
+                : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700'
+            }`}
+            title="Configure Windows File Explorer Navigation Pane Extension"
+          >
+            <FolderSync className="w-3.5 h-3.5 text-emerald-400" />
+            <span>
+              {shellState?.isRegisteredInExplorer
+                ? `Explorer Mounted (${shellState.activeShortcuts.length} synced)`
+                : 'Mount in Explorer'}
+            </span>
+          </button>
+
+          <button
+            onClick={() => onOpenDiagnostics('drives')}
+            className="flex items-center gap-1.5 px-2.5 py-1 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded text-xs text-slate-200 transition"
+            title="Map Network Share to Windows Drive Letter"
+          >
+            <HardDrive className="w-3.5 h-3.5 text-blue-400" />
+            <span>Map Drive ({shellState?.mappedDrives.length || 0})</span>
+          </button>
+
           {inaccessibleCount > 0 && (
             <div 
-              onClick={onOpenDiagnostics}
+              onClick={() => onOpenDiagnostics('logs')}
               className="flex items-center gap-1.5 px-2.5 py-1 bg-amber-950/40 border border-amber-800/60 rounded text-xs text-amber-300 cursor-pointer hover:bg-amber-950/60 transition"
               title="Click to view security audit log of filtered access-denied shares"
             >

@@ -16,7 +16,7 @@ import {
   Download,
   FileText
 } from 'lucide-react';
-import { NetworkShare, WindowsIdentity } from '../types/drive.js';
+import { NetworkShare, WindowsIdentity, ShellIntegrationState } from '../types/drive.js';
 
 interface SidebarProps {
   shares: NetworkShare[];
@@ -26,6 +26,9 @@ interface SidebarProps {
   isRootSelected: boolean;
   identity: WindowsIdentity | null;
   inaccessibleCount: number;
+  shellState: ShellIntegrationState | null;
+  onOpenShellSettings: (tab?: 'shell' | 'drives') => void;
+  onNavigatePath: (uncPath: string) => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -35,7 +38,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onSelectRoot,
   isRootSelected,
   identity,
-  inaccessibleCount
+  inaccessibleCount,
+  shellState,
+  onOpenShellSettings,
+  onNavigatePath
 }) => {
   const [isBunDriveExpanded, setIsBunDriveExpanded] = React.useState(true);
 
@@ -154,23 +160,64 @@ export const Sidebar: React.FC<SidebarProps> = ({
           )}
         </div>
 
-        {/* This PC Section */}
+        {/* This PC Section with Phase 2 Mapped Network Drives */}
         <div>
-          <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider px-2 mb-1">
-            This PC
+          <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider px-2 mb-1 flex items-center justify-between">
+            <span>This PC</span>
+            <button
+              onClick={() => onOpenShellSettings('drives')}
+              className="text-[10px] text-blue-400 hover:text-blue-300 font-normal"
+              title="Map Network Drive Letter"
+            >
+              + Map Drive
+            </button>
           </div>
           <div className="space-y-0.5">
             <div className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-slate-800/60 text-slate-400 cursor-not-allowed">
               <HardDrive className="w-3.5 h-3.5 text-slate-400" />
               <span>Local Disk (C:)</span>
             </div>
+
+            {shellState?.mappedDrives.map((drive) => (
+              <div
+                key={drive.driveLetter}
+                onClick={() => onNavigatePath(drive.uncPath)}
+                className="flex items-center justify-between px-2 py-1.5 rounded hover:bg-slate-800 text-slate-200 cursor-pointer transition group"
+                title={`Mapped Drive ${drive.driveLetter} -> ${drive.uncPath}`}
+              >
+                <div className="flex items-center gap-2 truncate">
+                  <HardDrive className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                  <span className="truncate">
+                    {drive.shareName} ({drive.driveLetter})
+                  </span>
+                </div>
+                <span className="text-[9px] font-mono text-emerald-400 bg-emerald-950/80 px-1 rounded">
+                  SMB
+                </span>
+              </div>
+            ))}
           </div>
         </div>
       </div>
 
-      {/* Security Context Footer Card */}
-      <div className="p-2.5 bg-slate-950 border-t border-slate-800">
-        <div className="flex items-center justify-between text-[11px] text-slate-400 mb-1">
+      {/* Security & Shell Namespace Status Card */}
+      <div className="p-2.5 bg-slate-950 border-t border-slate-800 space-y-2">
+        <div
+          onClick={() => onOpenShellSettings('shell')}
+          className="flex items-center justify-between px-2 py-1.5 rounded bg-slate-900 border border-slate-800 hover:border-blue-700/60 cursor-pointer transition"
+          title="Configure Windows Explorer Shell Namespace Extension"
+        >
+          <span className="text-[10px] text-slate-400">Explorer Shell Pin:</span>
+          <span
+            className={`text-[10px] font-mono font-semibold ${
+              shellState?.isRegisteredInExplorer ? 'text-emerald-400' : 'text-amber-400'
+            }`}
+          >
+            {shellState?.isRegisteredInExplorer ? 'Pinned (HKCU)' : 'Unregistered'}
+          </span>
+        </div>
+
+        <div className="flex items-center justify-between text-[11px] text-slate-400">
           <span className="flex items-center gap-1 font-semibold text-slate-300">
             <Shield className="w-3.5 h-3.5 text-emerald-400" />
             Security Context

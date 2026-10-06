@@ -105,3 +105,56 @@ export interface ShellExtensionBlueprint {
     value: string | number;
   }>;
 }
+
+/**
+ * Phase 2: Windows Explorer Shell Namespace Integration & Virtual Mounts
+ */
+
+export interface ShellShortcutEntry {
+  name: string;              // e.g. "Marketing-Assets (FS01-CORP)"
+  shareId: string;
+  uncPath: string;           // Target UNC path e.g. "\\\\FS01-CORP\\Marketing-Assets"
+  shortcutPath: string;      // Physical .lnk or Folder Shortcut path inside Virtual Root
+  accessLevel: ShareAccessLevel;
+  server: string;
+  synchronizedAt: string;    // ISO timestamp
+  status: 'Active' | 'Stale' | 'Orphaned';
+}
+
+export interface MappedDriveLetter {
+  driveLetter: string;       // e.g. "Z:"
+  uncPath: string;           // e.g. "\\\\FS01-CORP\\Public"
+  shareName: string;
+  server: string;
+  persistent: boolean;
+  status: 'Connected' | 'Disconnected' | 'Unavailable';
+  mappedAt: string;
+}
+
+export interface ShellIntegrationState {
+  isRegisteredInExplorer: boolean;
+  isPinnedToNavigationPane: boolean;
+  virtualRootPath: string;            // e.g. "%LOCALAPPDATA%\\Bun-Drive\\NamespaceRoot"
+  clsid: string;
+  progId: string;
+  autoSyncEnabled: boolean;
+  syncIntervalSeconds: number;
+  lastSyncedAt: string | null;
+  activeShortcuts: ShellShortcutEntry[];
+  mappedDrives: MappedDriveLetter[];
+  explorerIntegrationMode: 'ShellFolderInstance' | 'NamespaceJunction' | 'Hybrid';
+  healthStatus: 'Healthy' | 'NeedsSync' | 'Unregistered' | 'Error';
+  lastError?: string;
+}
+
+export interface ShellSyncResult {
+  success: boolean;
+  virtualRootPath: string;
+  createdCount: number;
+  updatedCount: number;
+  removedCount: number;
+  activeShortcuts: ShellShortcutEntry[];
+  durationMs: number;
+  timestamp: string;
+}
+
