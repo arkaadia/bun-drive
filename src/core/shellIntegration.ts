@@ -446,6 +446,31 @@ export class ShellIntegrationService {
   }
 
   /**
+   * Reconcile drive mapping statuses without deleting mapped drives
+   * Marks mapped letters as 'Connected' or 'Unavailable' based on current accessibility.
+   */
+  public reconcileDriveMappingStatuses(accessibleUncPaths: Set<string>, offlineServers: Set<string>): void {
+    for (const drive of this.mappedDrives) {
+      const normalizedTarget = drive.uncPath.toLowerCase().replace(/\\+$/, '');
+      const server = drive.server.toLowerCase();
+      if (offlineServers.has(server)) {
+        drive.status = 'Unavailable';
+      } else if (accessibleUncPaths.has(normalizedTarget)) {
+        drive.status = 'Connected';
+      } else {
+        drive.status = 'Unavailable';
+      }
+    }
+  }
+
+  /**
+   * Get direct reference to currently mapped drives
+   */
+  public getMappedDrives(): MappedDriveLetter[] {
+    return [...this.mappedDrives];
+  }
+
+  /**
    * Configure automatic background synchronization interval
    */
   public setAutoSync(enabled: boolean, intervalSeconds = 60): ShellIntegrationState {

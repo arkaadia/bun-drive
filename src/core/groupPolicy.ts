@@ -27,6 +27,17 @@ export class GroupPolicyService {
   private lastRunAt: string | null = null;
   private lastStatus: 'idle' | 'updating' | 'completed' | 'failed' = 'idle';
   private lastError?: string;
+  private refreshListeners: Array<(result: GroupPolicyRefreshResult) => void> = [];
+
+  /**
+   * Register a listener for Group Policy refresh completion
+   */
+  public onRefresh(listener: (result: GroupPolicyRefreshResult) => void): () => void {
+    this.refreshListeners.push(listener);
+    return () => {
+      this.refreshListeners = this.refreshListeners.filter(l => l !== listener);
+    };
+  }
 
   /**
    * Check if a Group Policy update operation is currently running
@@ -330,6 +341,13 @@ export class GroupPolicyService {
       };
 
       this.lastResult = completeResult;
+      for (const listener of this.refreshListeners) {
+        try {
+          listener(completeResult);
+        } catch {
+          // ignore
+        }
+      }
       return completeResult;
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);

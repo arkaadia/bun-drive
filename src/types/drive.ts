@@ -280,4 +280,54 @@ export interface GroupPolicyStatus {
   lastError?: string;
 }
 
+/**
+ * Phase 5: Automatic Detection of New Shares & Permission Changes Types
+ */
+
+export type ShareChangeType =
+  | 'NEW_SHARES'
+  | 'ACCESS_REVOKED'
+  | 'RESTORED'
+  | 'OFFLINE'
+  | 'STATUS_CHANGED'
+  | 'NO_CHANGE'
+  | 'BASELINE';
+
+export interface ShareChangeNotification {
+  id: string;
+  timestamp: string;
+  type: ShareChangeType;
+  message: string;
+  newSharesCount: number;
+  revokedSharesCount: number;
+  restoredSharesCount: number;
+  offlineSharesCount: number;
+  diff: ShareStateDiff;
+}
+
+export interface MonitorConfig {
+  enabled: boolean;
+  intervalSeconds: number;       // Configurable interval (e.g., default 180s)
+  minIntervalSeconds: number;    // e.g., 30s
+  maxIntervalSeconds: number;    // e.g., 3600s
+}
+
+export interface MonitorStatus {
+  enabled: boolean;
+  intervalSeconds: number;
+  isRefreshing: boolean;
+  lastRefreshTime: string | null;
+  lastSuccessfulDiscoveryTime: string | null;
+  nextScheduledRefreshTime: string | null;
+  currentCycle: number;
+  totalChangesDetected: number;
+  lastChangeSummary: string | null;
+  lastNotification: ShareChangeNotification | null;
+  lastError: string | null;
+  lastDurationMs: number;
+  knownSharesCount: number;
+  namespaceSyncCount: number;
+}
+
+
 

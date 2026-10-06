@@ -14,6 +14,7 @@ import { fileSystemService } from './src/core/fileSystem.js';
 import { ShellExtensionRegistry } from './src/core/shellExtensionRegistry.js';
 import { shellIntegrationService } from './src/core/shellIntegration.js';
 import { groupPolicyService } from './src/core/groupPolicy.js';
+import { shareChangeMonitor } from './src/core/shareChangeMonitor.js';
 import { logger } from './src/core/logger.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -30,6 +31,9 @@ async function startServer() {
   shellIntegrationService.initialize().catch((err) => {
     logger.warn('Server', 'Background shell integration init warning', err);
   });
+
+  // Initialize Phase 5 Automatic Share Change Monitor
+  shareChangeMonitor.start();
 
   // Log requests
   app.use((req, res, next) => {
@@ -139,6 +143,36 @@ async function startServer() {
     try {
       const result = await groupPolicyService.rediscoverWithoutGpupdate();
       res.json(result);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: message });
+    }
+  });
+
+  // 3c. Phase 5 Automatic Share Change Monitor Endpoints
+  app.get('/api/monitor/status', (req: Request, res: Response) => {
+    try {
+      res.json(shareChangeMonitor.getStatus());
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: message });
+    }
+  });
+
+  app.post('/api/monitor/config', (req: Request, res: Response) => {
+    try {
+      const updated = shareChangeMonitor.setConfig(req.body);
+      res.json({ config: updated, status: shareChangeMonitor.getStatus() });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(400).json({ error: message });
+    }
+  });
+
+  app.post('/api/monitor/check-now', async (req: Request, res: Response) => {
+    try {
+      const result = await shareChangeMonitor.checkNow('manual');
+      res.json({ ...result, status: shareChangeMonitor.getStatus() });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       res.status(500).json({ error: message });

@@ -30,7 +30,10 @@ import {
   CornerDownRight,
   Sparkles,
   Info,
-  RotateCcw
+  RotateCcw,
+  Activity,
+  Clock,
+  Radio
 } from 'lucide-react';
 import {
   NetworkShare,
@@ -42,7 +45,8 @@ import {
   AvailableDriveLetter,
   DriveMappingConflict,
   ContextMenuTarget,
-  GroupPolicyRefreshResult
+  GroupPolicyRefreshResult,
+  MonitorStatus
 } from '../types/drive.js';
 
 interface NetworkSharesManagerProps {
@@ -57,6 +61,9 @@ interface NetworkSharesManagerProps {
   lastGpResult?: GroupPolicyRefreshResult | null;
   gpError?: string | null;
   onClearGpError?: () => void;
+  monitorStatus?: MonitorStatus | null;
+  onToggleMonitor?: (enabled: boolean) => Promise<void>;
+  onChangeMonitorInterval?: (seconds: number) => Promise<void>;
   onMapDrive: (letter: string, uncPath: string, persistent: boolean, replace: boolean) => Promise<void>;
   onUnmapDrive: (letter: string) => Promise<void>;
   onOpenInExplorer: (uncPath: string) => void;
@@ -79,6 +86,9 @@ export const NetworkSharesManager: React.FC<NetworkSharesManagerProps> = ({
   lastGpResult,
   gpError,
   onClearGpError,
+  monitorStatus,
+  onToggleMonitor,
+  onChangeMonitorInterval,
   onMapDrive,
   onUnmapDrive,
   onOpenInExplorer,
@@ -490,6 +500,72 @@ export const NetworkSharesManager: React.FC<NetworkSharesManagerProps> = ({
             <span className="text-[10px] text-slate-500 block truncate">
               {identity?.isDomainJoined ? 'Active Directory Member' : 'Local Network'}
             </span>
+          </div>
+        </div>
+
+        {/* Phase 5: Automatic Share Monitoring Status Bar */}
+        <div className="bg-slate-950/80 border border-slate-800 rounded-lg p-3 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
+          <div className="flex items-center gap-2.5">
+            <div className={`w-2.5 h-2.5 rounded-full ${
+              monitorStatus?.enabled
+                ? monitorStatus?.isRefreshing
+                  ? 'bg-amber-400 animate-pulse'
+                  : 'bg-emerald-400'
+                : 'bg-slate-600'
+            }`} />
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="font-semibold text-white flex items-center gap-1.5">
+                  <Radio className="w-3.5 h-3.5 text-blue-400" />
+                  Automatic Share Monitor
+                </span>
+                <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono border ${
+                  monitorStatus?.enabled
+                    ? 'bg-emerald-950/80 text-emerald-300 border-emerald-800/60'
+                    : 'bg-slate-900 text-slate-400 border-slate-800'
+                }`}>
+                  {monitorStatus?.enabled ? `Every ${monitorStatus?.intervalSeconds || 180}s` : 'Paused'}
+                </span>
+                {monitorStatus?.isRefreshing && (
+                  <span className="text-[10px] bg-blue-950 text-blue-300 border border-blue-800/60 px-1.5 py-0.5 rounded font-mono animate-pulse">
+                    Scanning AD...
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] text-slate-400 mt-0.5">
+                {monitorStatus?.lastChangeSummary ? (
+                  <span className="text-emerald-300 font-medium">Last detected change: {monitorStatus.lastChangeSummary}</span>
+                ) : (
+                  <span>Continuously tracks AD permissions, newly published SMB shares, and offline transitions.</span>
+                )}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3 self-end md:self-auto text-[11px] text-slate-400 font-mono">
+            {monitorStatus?.lastSuccessfulDiscoveryTime && (
+              <span className="hidden sm:inline">
+                Last: {new Date(monitorStatus.lastSuccessfulDiscoveryTime).toLocaleTimeString()}
+              </span>
+            )}
+            {monitorStatus?.nextScheduledRefreshTime && monitorStatus.enabled && (
+              <span className="text-slate-400 flex items-center gap-1">
+                <Clock className="w-3 h-3 text-slate-500" />
+                Next: {new Date(monitorStatus.nextScheduledRefreshTime).toLocaleTimeString()}
+              </span>
+            )}
+            {onToggleMonitor && (
+              <button
+                onClick={() => onToggleMonitor(!monitorStatus?.enabled)}
+                className={`px-2 py-0.5 rounded text-[10px] font-sans border transition ${
+                  monitorStatus?.enabled
+                    ? 'bg-slate-900 hover:bg-slate-800 border-slate-700 text-slate-300'
+                    : 'bg-blue-600 hover:bg-blue-500 border-blue-500 text-white'
+                }`}
+              >
+                {monitorStatus?.enabled ? 'Pause' : 'Enable'}
+              </button>
+            )}
           </div>
         </div>
       </section>

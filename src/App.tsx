@@ -12,7 +12,7 @@ import { DiagnosticsModal } from './components/DiagnosticsModal.js';
 import { StatusFooter } from './components/StatusFooter.js';
 import { ContextMenu } from './components/ContextMenu.js';
 import { PropertiesModal } from './components/PropertiesModal.js';
-import { NetworkShare, WindowsIdentity, BrowseResult, LogEntry, ShellIntegrationState, ContextMenuTarget, GroupPolicyRefreshResult } from './types/drive.js';
+import { NetworkShare, WindowsIdentity, BrowseResult, LogEntry, ShellIntegrationState, ContextMenuTarget, GroupPolicyRefreshResult, MonitorStatus } from './types/drive.js';
 
 export default function App() {
   const [identity, setIdentity] = useState<WindowsIdentity | null>(null);
@@ -26,6 +26,9 @@ export default function App() {
   const [isGpUpdating, setIsGpUpdating] = useState<boolean>(false);
   const [lastGpResult, setLastGpResult] = useState<GroupPolicyRefreshResult | null>(null);
   const [gpError, setGpError] = useState<string | null>(null);
+
+  // Automatic Share Change Monitor State (Phase 5)
+  const [monitorStatus, setMonitorStatus] = useState<MonitorStatus | null>(null);
   
   // Navigation State
   const [currentPath, setCurrentPath] = useState<string>('Bun-Drive');
@@ -41,7 +44,7 @@ export default function App() {
 
   // Diagnostics & Logs State
   const [isDiagnosticsOpen, setIsDiagnosticsOpen] = useState<boolean>(false);
-  const [diagnosticsTab, setDiagnosticsTab] = useState<'identity' | 'logs' | 'shell' | 'drives' | 'probe'>('identity');
+  const [diagnosticsTab, setDiagnosticsTab] = useState<'identity' | 'logs' | 'shell' | 'drives' | 'probe' | 'grouppolicy' | 'monitor'>('identity');
   const [logs, setLogs] = useState<LogEntry[]>([]);
 
   // Right-Click Context Menu & Properties Dialog State (Phase 3 Completion)
@@ -60,7 +63,79 @@ export default function App() {
     loadShares();
     loadShellStatus();
     loadLogs();
+    loadMonitorStatus();
+
+    // Poll monitor status periodically (every 8 seconds) so background change detections update the UI
+    const monitorTimer = setInterval(() => {
+      loadMonitorStatus();
+    }, 8000);
+
+    return () => clearInterval(monitorTimer);
   }, []);
+
+  const loadMonitorStatus = async () => {
+    try {
+      const res = await fetch('/api/monitor/status');
+      if (res.ok) {
+        const data: MonitorStatus = await res.json();
+        setMonitorStatus(data);
+      }
+    } catch (err) {
+      console.error('Failed to load monitor status', err);
+    }
+  };
+
+  const handleToggleMonitor = async (enabled: boolean) => {
+    try {
+      const res = await fetch('/api/monitor/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.status) setMonitorStatus(data.status);
+      }
+    } catch (err) {
+      console.error('Failed to toggle monitor', err);
+    }
+  };
+
+  const handleChangeMonitorInterval = async (intervalSeconds: number) => {
+    try {
+      const res = await fetch('/api/monitor/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ intervalSeconds })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.status) setMonitorStatus(data.status);
+      }
+    } catch (err) {
+      console.error('Failed to change monitor interval', err);
+    }
+  };
+
+  const handleTriggerCheckNow = async () => {
+    try {
+      const res = await fetch('/api/monitor/check-now', { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.status) setMonitorStatus(data.status);
+        if (data.discovery?.shares) {
+          setShares(data.discovery.shares);
+          setInaccessibleCount(data.discovery.inaccessibleSharesCount || 0);
+          setScanDurationMs(data.discovery.scanDurationMs || 0);
+          setLastScannedTime(data.discovery.timestamp || new Date().toISOString());
+        }
+        await loadShellStatus();
+        loadLogs();
+      }
+    } catch (err) {
+      console.error('Failed to trigger monitor check', err);
+    }
+  };
 
   const loadShellStatus = async () => {
     try {
@@ -451,6 +526,9 @@ export default function App() {
                 lastGpResult={lastGpResult}
                 gpError={gpError}
                 onClearGpError={() => setGpError(null)}
+                monitorStatus={monitorStatus}
+                onToggleMonitor={handleToggleMonitor}
+                onChangeMonitorInterval={handleChangeMonitorInterval}
                 onMapDrive={handleMapDrive}
                 onUnmapDrive={handleUnmapDrive}
                 onOpenInExplorer={(p) => handleOpenInExplorer(p)}
@@ -522,6 +600,10 @@ export default function App() {
         isGpUpdating={isGpUpdating}
         lastGpResult={lastGpResult}
         gpError={gpError}
+        monitorStatus={monitorStatus}
+        onToggleMonitor={handleToggleMonitor}
+        onChangeMonitorInterval={handleChangeMonitorInterval}
+        onTriggerCheckNow={handleTriggerCheckNow}
         initialTab={diagnosticsTab}
       />
 
