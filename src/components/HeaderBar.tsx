@@ -13,7 +13,8 @@ import {
   ChevronRight, 
   ArrowLeft,
   Search,
-  Check
+  Check,
+  RotateCcw
 } from 'lucide-react';
 import { WindowsIdentity } from '../types/drive.js';
 
@@ -23,6 +24,8 @@ interface HeaderBarProps {
   onNavigatePath: (path: string) => void;
   onRefresh: () => void;
   isRefreshing: boolean;
+  onRefreshGroupPolicy: () => void;
+  isGpUpdating: boolean;
   onOpenInExplorer: () => void;
   onOpenDiagnostics: () => void;
   identity: WindowsIdentity | null;
@@ -38,6 +41,8 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
   onNavigatePath,
   onRefresh,
   isRefreshing,
+  onRefreshGroupPolicy,
+  isGpUpdating,
   onOpenInExplorer,
   onOpenDiagnostics,
   identity,
@@ -172,7 +177,7 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
           {/* Refresh AD & Shares */}
           <button
             onClick={onRefresh}
-            disabled={isRefreshing}
+            disabled={isRefreshing || isGpUpdating}
             className={`flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-md border font-medium transition ${
               isRefreshing
                 ? 'bg-blue-900/40 border-blue-700 text-blue-300 cursor-not-allowed'
@@ -182,6 +187,22 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
             <span className="hidden sm:inline">{isRefreshing ? 'Scanning AD...' : 'Refresh Shares'}</span>
+          </button>
+
+          {/* Refresh Group Policy (Phase 4) */}
+          <button
+            onClick={onRefreshGroupPolicy}
+            disabled={isGpUpdating || isRefreshing}
+            className={`flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-md border font-medium transition ${
+              isGpUpdating
+                ? 'bg-indigo-900/40 border-indigo-700 text-indigo-300 cursor-not-allowed'
+                : 'bg-indigo-600 hover:bg-indigo-500 border-indigo-500 text-white shadow-sm'
+            }`}
+            title="Execute gpupdate /force, re-discover authorized shares, and sync Explorer Namespace"
+          >
+            <RotateCcw className={`w-3.5 h-3.5 ${isGpUpdating ? 'animate-spin' : ''}`} />
+            <span className="hidden md:inline">{isGpUpdating ? 'Updating Group Policy...' : 'Refresh Group Policy'}</span>
+            <span className="inline md:hidden">{isGpUpdating ? 'GP...' : 'GP Update'}</span>
           </button>
 
           {/* Open in Native Windows Explorer */}

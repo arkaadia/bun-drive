@@ -228,3 +228,56 @@ export interface ContextMenuTarget {
   accessLevel?: 'Read' | 'ReadWrite' | 'None';
 }
 
+/**
+ * Phase 4: Group Policy Update & Automatic Share Refresh Types
+ */
+
+export interface GpupdateExecutionResult {
+  command: string;           // "gpupdate /force"
+  started: boolean;          // Whether the Windows process was launched successfully
+  success: boolean;          // True if exit code 0
+  exitCode: number | null;   // Process exit code (0 = success)
+  stdout: string;            // Standard output from gpupdate
+  stderr: string;            // Standard error output from gpupdate
+  durationMs: number;        // Total execution duration
+  timedOut: boolean;         // True if the process exceeded timeout limit
+  error?: string;            // User-friendly error message if failed
+  timestamp: string;         // ISO timestamp of execution
+}
+
+export interface ShareStateDiff {
+  newlyAccessible: NetworkShare[];
+  noLongerAccessible: NetworkShare[];
+  becameOffline: NetworkShare[];
+  becameAvailable: NetworkShare[];
+  unchanged: NetworkShare[];
+  summary: {
+    totalBefore: number;
+    totalAfter: number;
+    newCount: number;
+    removedCount: number;
+    offlineCount: number;
+    restoredCount: number;
+  };
+}
+
+export interface GroupPolicyRefreshResult {
+  gpupdate: GpupdateExecutionResult;
+  discovery: ShareDiscoveryResult;
+  diff: ShareStateDiff;
+  shellSync: ShellSyncResult;
+  shellStatus: ShellIntegrationState;
+  timestamp: string;
+  success: boolean;
+  message: string;
+}
+
+export interface GroupPolicyStatus {
+  isUpdating: boolean;
+  lastResult: GroupPolicyRefreshResult | null;
+  lastRunAt: string | null;
+  lastStatus: 'idle' | 'updating' | 'completed' | 'failed';
+  lastError?: string;
+}
+
+

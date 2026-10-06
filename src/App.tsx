@@ -12,7 +12,7 @@ import { DiagnosticsModal } from './components/DiagnosticsModal.js';
 import { StatusFooter } from './components/StatusFooter.js';
 import { ContextMenu } from './components/ContextMenu.js';
 import { PropertiesModal } from './components/PropertiesModal.js';
-import { NetworkShare, WindowsIdentity, BrowseResult, LogEntry, ShellIntegrationState, ContextMenuTarget } from './types/drive.js';
+import { NetworkShare, WindowsIdentity, BrowseResult, LogEntry, ShellIntegrationState, ContextMenuTarget, GroupPolicyRefreshResult } from './types/drive.js';
 
 export default function App() {
   const [identity, setIdentity] = useState<WindowsIdentity | null>(null);
@@ -21,6 +21,11 @@ export default function App() {
   const [scanDurationMs, setScanDurationMs] = useState<number>(0);
   const [lastScannedTime, setLastScannedTime] = useState<string | null>(null);
   const [shellState, setShellState] = useState<ShellIntegrationState | null>(null);
+
+  // Group Policy Refresh State (Phase 4)
+  const [isGpUpdating, setIsGpUpdating] = useState<boolean>(false);
+  const [lastGpResult, setLastGpResult] = useState<GroupPolicyRefreshResult | null>(null);
+  const [gpError, setGpError] = useState<string | null>(null);
   
   // Navigation State
   const [currentPath, setCurrentPath] = useState<string>('Bun-Drive');
@@ -123,6 +128,58 @@ export default function App() {
       console.error('Failed to refresh shares', err);
     } finally {
       setIsRefreshing(false);
+    }
+  };
+
+  const handleRefreshGroupPolicy = async () => {
+    if (isGpUpdating || isRefreshing) return;
+    setIsGpUpdating(true);
+    setGpError(null);
+    try {
+      const res = await fetch('/api/group-policy/refresh', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setShares(data.discovery?.shares || []);
+        setInaccessibleCount(data.discovery?.inaccessibleSharesCount || 0);
+        setScanDurationMs(data.discovery?.scanDurationMs || 0);
+        setLastScannedTime(data.timestamp || new Date().toISOString());
+        if (data.discovery?.identity) setIdentity(data.discovery.identity);
+        if (data.shellStatus) setShellState(data.shellStatus);
+        setLastGpResult(data);
+        await loadIdentity();
+        await loadLogs();
+
+        // If currently browsing a path, verify if it is still valid and accessible
+        if (currentPath !== 'Bun-Drive') {
+          const matchingShare = (data.discovery?.shares || []).find((s: NetworkShare) =>
+            currentPath.toLowerCase().startsWith(s.uncPath.toLowerCase()) && s.isAccessible
+          );
+          if (matchingShare) {
+            browseToPath(currentPath);
+          } else {
+            // Path is no longer accessible under new Group Policy permissions
+            setCurrentPath('Bun-Drive');
+            setSelectedShareId(null);
+            setBrowseResult(null);
+          }
+        }
+      } else {
+        const errorMsg = data.error || data.message || 'Group Policy update failed';
+        setGpError(errorMsg);
+        if (data.gpupdate) {
+          setLastGpResult(data);
+        }
+        await loadLogs();
+      }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      setGpError(message);
+    } finally {
+      setIsGpUpdating(false);
     }
   };
 
@@ -306,6 +363,8 @@ export default function App() {
         onNavigatePath={browseToPath}
         onRefresh={handleRefresh}
         isRefreshing={isRefreshing}
+        onRefreshGroupPolicy={handleRefreshGroupPolicy}
+        isGpUpdating={isGpUpdating}
         onOpenInExplorer={() => handleOpenInExplorer(currentPath)}
         onOpenDiagnostics={() => openDiagnosticsWithTab('identity')}
         identity={identity}
@@ -387,6 +446,11 @@ export default function App() {
                 shellState={shellState}
                 isRefreshing={isRefreshing}
                 onRefreshShares={handleRefresh}
+                onRefreshGroupPolicy={handleRefreshGroupPolicy}
+                isGpUpdating={isGpUpdating}
+                lastGpResult={lastGpResult}
+                gpError={gpError}
+                onClearGpError={() => setGpError(null)}
                 onMapDrive={handleMapDrive}
                 onUnmapDrive={handleUnmapDrive}
                 onOpenInExplorer={(p) => handleOpenInExplorer(p)}
@@ -454,6 +518,10 @@ export default function App() {
         onMapDrive={handleMapDrive}
         onUnmapDrive={handleUnmapDrive}
         onOpenInExplorer={(p) => handleOpenInExplorer(p)}
+        onRefreshGroupPolicy={handleRefreshGroupPolicy}
+        isGpUpdating={isGpUpdating}
+        lastGpResult={lastGpResult}
+        gpError={gpError}
         initialTab={diagnosticsTab}
       />
 

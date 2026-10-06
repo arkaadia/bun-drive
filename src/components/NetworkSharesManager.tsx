@@ -29,7 +29,8 @@ import {
   Lock,
   CornerDownRight,
   Sparkles,
-  Info
+  Info,
+  RotateCcw
 } from 'lucide-react';
 import {
   NetworkShare,
@@ -40,7 +41,8 @@ import {
   LogEntry,
   AvailableDriveLetter,
   DriveMappingConflict,
-  ContextMenuTarget
+  ContextMenuTarget,
+  GroupPolicyRefreshResult
 } from '../types/drive.js';
 
 interface NetworkSharesManagerProps {
@@ -50,6 +52,11 @@ interface NetworkSharesManagerProps {
   shellState: ShellIntegrationState | null;
   isRefreshing: boolean;
   onRefreshShares: () => Promise<void>;
+  onRefreshGroupPolicy?: () => Promise<void>;
+  isGpUpdating?: boolean;
+  lastGpResult?: GroupPolicyRefreshResult | null;
+  gpError?: string | null;
+  onClearGpError?: () => void;
   onMapDrive: (letter: string, uncPath: string, persistent: boolean, replace: boolean) => Promise<void>;
   onUnmapDrive: (letter: string) => Promise<void>;
   onOpenInExplorer: (uncPath: string) => void;
@@ -67,6 +74,11 @@ export const NetworkSharesManager: React.FC<NetworkSharesManagerProps> = ({
   shellState,
   isRefreshing,
   onRefreshShares,
+  onRefreshGroupPolicy,
+  isGpUpdating = false,
+  lastGpResult,
+  gpError,
+  onClearGpError,
   onMapDrive,
   onUnmapDrive,
   onOpenInExplorer,
@@ -314,16 +326,126 @@ export const NetworkSharesManager: React.FC<NetworkSharesManagerProps> = ({
             </div>
           </div>
 
-          <button
-            onClick={onRefreshShares}
-            disabled={isRefreshing}
-            className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:bg-blue-900/50 text-white font-medium rounded text-xs transition shadow-sm self-start sm:self-auto"
-            title="Rediscover Active Directory shares and refresh live mappings"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
-            <span>{isRefreshing ? 'Refreshing Shares...' : 'Refresh Shares'}</span>
-          </button>
+          <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+            <button
+              onClick={onRefreshShares}
+              disabled={isRefreshing || isGpUpdating}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:bg-blue-900/50 text-white font-medium rounded text-xs transition shadow-sm"
+              title="Rediscover Active Directory shares and refresh live mappings (without gpupdate)"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
+              <span>{isRefreshing ? 'Refreshing Shares...' : 'Refresh Shares'}</span>
+            </button>
+
+            {onRefreshGroupPolicy && (
+              <button
+                onClick={onRefreshGroupPolicy}
+                disabled={isGpUpdating || isRefreshing}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:bg-indigo-900/50 text-white font-medium rounded text-xs transition shadow-sm"
+                title="Execute gpupdate /force, wait for policy update, and re-discover real network shares"
+              >
+                <RotateCcw className={`w-3.5 h-3.5 ${isGpUpdating ? 'animate-spin' : ''}`} />
+                <span>{isGpUpdating ? 'Updating Group Policy...' : 'Refresh Group Policy'}</span>
+              </button>
+            )}
+          </div>
         </div>
+
+        {/* Group Policy Active Progress Banner */}
+        {isGpUpdating && (
+          <div className="bg-indigo-950/70 border border-indigo-700/80 rounded-lg p-3 text-indigo-200 flex items-center justify-between animate-pulse">
+            <div className="flex items-center gap-2.5">
+              <RotateCcw className="w-4 h-4 text-indigo-400 animate-spin" />
+              <div>
+                <span className="font-semibold text-white">Updating Group Policy (gpupdate /force)...</span>
+                <p className="text-[11px] text-indigo-300">
+                  Refreshing Active Directory computer & user policies, re-evaluating Kerberos security tokens, and preparing network share rediscovery.
+                </p>
+              </div>
+            </div>
+            <span className="text-[10px] bg-indigo-900/80 text-indigo-200 px-2 py-0.5 rounded border border-indigo-700/60 font-mono">
+              Background Execution
+            </span>
+          </div>
+        )}
+
+        {/* Group Policy Error Banner */}
+        {gpError && !isGpUpdating && (
+          <div className="bg-rose-950/70 border border-rose-700/80 rounded-lg p-3 text-rose-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div className="flex items-center gap-2.5">
+              <AlertCircle className="w-4 h-4 text-rose-400 flex-shrink-0" />
+              <div>
+                <span className="font-semibold text-rose-100">Group Policy update failed</span>
+                <p className="text-[11px] text-rose-300">{gpError}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 self-end sm:self-auto">
+              <button
+                onClick={onRefreshShares}
+                className="px-2.5 py-1 bg-rose-900 hover:bg-rose-800 text-white text-[11px] rounded transition"
+              >
+                Try Standard Share Refresh
+              </button>
+              {onClearGpError && (
+                <button
+                  onClick={onClearGpError}
+                  className="px-2 py-1 text-rose-400 hover:text-white text-[11px]"
+                >
+                  Dismiss
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Group Policy Post-Update Diff Notification */}
+        {lastGpResult && lastGpResult.success && !isGpUpdating && (
+          <div className="bg-slate-950/90 border border-indigo-800/80 rounded-lg p-3 space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+                <span className="font-semibold text-white text-xs">
+                  Group Policy update completed ({lastGpResult.gpupdate.durationMs}ms)
+                </span>
+                <span className="text-[10px] text-slate-400 font-mono">
+                  {new Date(lastGpResult.timestamp).toLocaleTimeString()}
+                </span>
+              </div>
+              <span className="text-[10px] text-indigo-300 font-mono bg-indigo-950/80 px-2 py-0.5 rounded border border-indigo-800/60">
+                Explorer Synced
+              </span>
+            </div>
+
+            {/* Diff details */}
+            <div className="flex items-center gap-2 flex-wrap text-[11px]">
+              {lastGpResult.diff.summary.newCount > 0 ? (
+                <span className="bg-emerald-950 text-emerald-300 border border-emerald-800/70 px-2 py-0.5 rounded font-medium flex items-center gap-1">
+                  <Sparkles className="w-3 h-3" />
+                  {lastGpResult.diff.summary.newCount} newly accessible: {lastGpResult.diff.newlyAccessible.map(s => s.name).join(', ')}
+                </span>
+              ) : (
+                <span className="text-slate-400">No new shares published.</span>
+              )}
+
+              {lastGpResult.diff.summary.removedCount > 0 && (
+                <span className="bg-amber-950 text-amber-300 border border-amber-800/70 px-2 py-0.5 rounded font-medium flex items-center gap-1">
+                  <Lock className="w-3 h-3" />
+                  {lastGpResult.diff.summary.removedCount} no longer accessible: {lastGpResult.diff.noLongerAccessible.map(s => s.name).join(', ')}
+                </span>
+              )}
+
+              {lastGpResult.diff.summary.offlineCount > 0 && (
+                <span className="bg-rose-950 text-rose-300 border border-rose-800/70 px-2 py-0.5 rounded font-medium">
+                  {lastGpResult.diff.summary.offlineCount} offline server(s)
+                </span>
+              )}
+
+              <span className="text-slate-500 text-[10px]">
+                Total accessible: {lastGpResult.discovery.shares.length} • Virtual Root: {lastGpResult.shellStatus.activeShortcuts.length} shortcuts
+              </span>
+            </div>
+          </div>
+        )}
 
         {/* Domain & Identity Details Grid */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 pt-1">

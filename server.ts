@@ -13,6 +13,7 @@ import { discoveryService } from './src/core/discovery.js';
 import { fileSystemService } from './src/core/fileSystem.js';
 import { ShellExtensionRegistry } from './src/core/shellExtensionRegistry.js';
 import { shellIntegrationService } from './src/core/shellIntegration.js';
+import { groupPolicyService } from './src/core/groupPolicy.js';
 import { logger } from './src/core/logger.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -88,6 +89,58 @@ async function startServer() {
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       logger.error('API:Shares', 'Error refreshing shares', err);
+      res.status(500).json({ error: message });
+    }
+  });
+
+  // 3b. Group Policy Refresh & Share Synchronization Endpoints (Phase 4)
+  app.post('/api/group-policy/refresh', async (req: Request, res: Response) => {
+    try {
+      logger.info('API:GroupPolicy', 'Group Policy update requested by user');
+      const options = req.body || {};
+      const result = await groupPolicyService.refreshGroupPolicy(options);
+      if (!result.success) {
+        res.status(502).json({
+          ...result,
+          error: result.message,
+          canFallbackRediscover: true
+        });
+        return;
+      }
+      res.json(result);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.error('API:GroupPolicy', 'Error executing Group Policy refresh', err);
+      res.status(409).json({ error: message, isUpdating: groupPolicyService.isOperationInProgress() });
+    }
+  });
+
+  app.get('/api/group-policy/status', (req: Request, res: Response) => {
+    try {
+      const status = groupPolicyService.getStatus();
+      res.json(status);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: message });
+    }
+  });
+
+  app.post('/api/group-policy/gpupdate-only', async (req: Request, res: Response) => {
+    try {
+      const result = await groupPolicyService.executeGpupdateOnly(req.body || {});
+      res.json(result);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: message });
+    }
+  });
+
+  app.post('/api/group-policy/fallback-rediscover', async (req: Request, res: Response) => {
+    try {
+      const result = await groupPolicyService.rediscoverWithoutGpupdate();
+      res.json(result);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
       res.status(500).json({ error: message });
     }
   });

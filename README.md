@@ -38,6 +38,19 @@ Bun-Drive dynamically discovers SMB network shares across an Active Directory do
   - **Sharing & Mapping**: Network path details, mapped drive letter, live connection status, network availability, and inline buttons to map or unmap drive letters.
   - **Security & Permissions**: Verified Windows NTFS/SMB permissions (Read/Traverse, Write/Modify, verified ACL status), Active Directory user credentials, domain name, and authentication token type. Zero fabricated data; strictly verifies real permissions without attempting to bypass Windows security.
 
+### Phase 4: Group Policy Update & Automatic Share Refresh
+- **User Actions**:
+  - **Refresh Shares**: Performs Active Directory and SMB share re-enumeration under the current user's security token and synchronizes the UI/Explorer Namespace without invoking Group Policy.
+  - **Refresh Group Policy**: Executes `gpupdate /force` in the background, waits for Group Policy update completion, triggers a fresh Active Directory share discovery, computes an old-vs-new state diff, updates the UI reactively, and synchronizes the Windows Explorer Namespace.
+- **Asynchronous Execution & UI Responsiveness**: The Group Policy update runs entirely in the background without freezing or blocking the UI. Concurrency protection debounces and prevents overlapping simultaneous operations.
+- **Post-GPUpdate Share Rediscovery**: Running `gpupdate /force` alone is not enough; Bun-Drive automatically invalidates cached Kerberos tokens and executes a new real Active Directory share discovery using the user's updated security context.
+- **Share Accessibility State Diffing**: Automatically analyzes changes between previous and newly discovered states:
+  - **Newly Accessible Shares**: New shares published or authorized through updated Group Policy security groups (e.g. `Finance-Secure`).
+  - **Revoked / Inaccessible Shares**: Shares whose NTFS/SMB ACLs no longer grant user read/traverse permissions are filtered out of the authorized view.
+  - **Offline Transitions & Restorations**: Identifies servers that went offline or became reachable again.
+- **Explorer Namespace Synchronization**: Instantly updates virtual folder shortcuts in `%LOCALAPPDATA%\Bun-Drive\NamespaceRoot` (or test environment Virtual Root), materializing newly accessible shares and pruning revoked shortcuts without restarting Windows or re-registering the extension.
+- **Security Audit & Diagnostic Logging**: Detailed execution metrics (command line, stdout, stderr, exit code, duration, timestamps) are surfaced in the Diagnostics Modal under the **Group Policy** tab.
+
 ---
 
 ## Technical Guide & Operations
@@ -47,6 +60,17 @@ Bun-Drive dynamically discovers SMB network shares across an Active Directory do
 2. Queries the domain context and queries AD LDAP for domain member servers with server OS objects or CIFS Service Principal Names (`(&(objectCategory=computer)(|(operatingSystem=*Server*)(servicePrincipalName=cifs/*)))`).
 3. Discovers published disk shares using CIM/WMI `Win32_Share` (type 0 STYPE_DISKTREE) and fallback `net view \\<server>`.
 4. Checks server reachability on TCP port 445 before probing to prevent UI hangs on offline servers.
+
+### How Group Policy Refresh (gpupdate /force) Works
+1. When the user clicks **Refresh Group Policy**, Bun-Drive launches `gpupdate.exe /force` via Windows process execution.
+2. The standard input (`stdin`) stream is closed immediately to prevent interactive prompts (such as restart or logoff requests) from hanging the process.
+3. Bun-Drive captures process startup status, standard output (`stdout`), error stream (`stderr`), exit code (0 for success), and execution duration in milliseconds.
+4. If Group Policy update succeeds, cached security identity tokens are invalidated and an immediate fresh Active Directory discovery runs under the user's refreshed token.
+5. Bun-Drive compares the old and new share list:
+   - Newly authorized shares are added to the UI and materialized as `.lnk` shortcuts in the Explorer Namespace.
+   - Shares that became inaccessible or revoked are pruned from the primary view and virtual shortcuts.
+   - Previously selected paths that are no longer accessible are safely redirected to the Bun-Drive root.
+6. If `gpupdate` fails (e.g. network disconnection, Domain Controller unreachable, non-zero exit code), Bun-Drive alerts the user with a descriptive error and presents a safe fallback button to run standard share rediscovery.
 
 ### How Accessible Shares are Detected
 Each candidate share is evaluated against the user's native Windows security context via `[System.IO.Directory]::GetFileSystemEntries($uncPath)`. If traversal is permitted, write access is verified with a transient probe. Administrative hidden shares (ending in `$`) and access-denied shares are excluded from the primary user view and recorded in the audit log.
@@ -61,9 +85,22 @@ Each candidate share is evaluated against the user's native Windows security con
 2. Click **Map Drive**. If the letter is free, it is mapped with `/persistent:yes`.
 3. If the letter is already mapped, Bun-Drive displays a conflict warning showing the existing remote target and asks whether to cancel, pick a free letter, or safely replace the mapping.
 
-### Required Windows Permissions & Limitations
-- **Standard User**: Normal domain user credentials with no Administrator privileges are required. Both HKCU registry registration and drive letter mapping (`net use`) operate within standard user privileges.
+### Required Windows Permissions & Domain Configuration
+- **Standard User**: Normal domain user credentials with no Administrator privileges are required. Both HKCU registry registration, drive letter mapping (`net use`), and user Group Policy refreshes (`gpupdate /force`) execute within standard user privileges.
+- **Domain Controller Connectivity**: For computer policy updates and LDAP discovery, the workstation must have connectivity to the Domain Controller on ports 53 (DNS), 88 (Kerberos), 389 (LDAP), and 445 (SMB).
 - **Non-Domain / Workgroup Environments**: When running on standalone or workgroup machines, Bun-Drive detects the workgroup status and discovers local shares or probed servers using standard SMB negotiation.
+
+### Troubleshooting
+- **Group Policy Update Failed (Exit Code != 0)**:
+  - Check network connectivity to the Domain Controller (`DC01`).
+  - Verify DNS resolution of the domain FQDN (e.g. `corp.local`).
+  - Ensure Windows Time service (`w32tm`) is synchronized within 5 minutes of the Domain Controller (Kerberos requirement).
+  - Use the **Security & AD Info** → **Group Policy** tab in Bun-Drive to inspect the raw `gpupdate` stdout and stderr logs.
+- **New Share Not Visible After GPUpdate**:
+  - Verify that the user's Active Directory account has been added to the corresponding security group on the Domain Controller.
+  - If a group policy requires Kerberos ticket re-issuance, running **Refresh Group Policy** re-evaluates the token; in rare cases involving token bloat, Windows logoff/logon may be required by Active Directory.
+- **Drive Mapping Conflict**:
+  - If a drive letter is locked by an existing mapping or Windows process, select another available letter from the dropdown or click **Replace Existing** to safely disconnect and remap.
 
 ---
 

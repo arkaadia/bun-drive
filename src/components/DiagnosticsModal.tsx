@@ -17,14 +17,19 @@ import {
   Power,
   Trash2,
   ExternalLink,
-  Link2
+  Link2,
+  RotateCcw,
+  Sparkles,
+  Lock,
+  Terminal
 } from 'lucide-react';
 import {
   WindowsIdentity,
   LogEntry,
   ShellExtensionBlueprint,
   ShellIntegrationState,
-  NetworkShare
+  NetworkShare,
+  GroupPolicyRefreshResult
 } from '../types/drive.js';
 
 interface DiagnosticsModalProps {
@@ -42,7 +47,11 @@ interface DiagnosticsModalProps {
   onMapDrive: (letter: string, uncPath: string, persistent: boolean, replace?: boolean) => Promise<void>;
   onUnmapDrive: (letter: string) => Promise<void>;
   onOpenInExplorer: (path: string) => void;
-  initialTab?: 'identity' | 'logs' | 'shell' | 'drives' | 'probe';
+  onRefreshGroupPolicy?: () => Promise<void>;
+  isGpUpdating?: boolean;
+  lastGpResult?: GroupPolicyRefreshResult | null;
+  gpError?: string | null;
+  initialTab?: 'identity' | 'logs' | 'shell' | 'drives' | 'probe' | 'grouppolicy';
 }
 
 export const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({
@@ -60,9 +69,13 @@ export const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({
   onMapDrive,
   onUnmapDrive,
   onOpenInExplorer,
-  initialTab = 'identity'
+  onRefreshGroupPolicy,
+  isGpUpdating = false,
+  lastGpResult,
+  gpError,
+  initialTab = 'identity',
 }) => {
-  const [activeTab, setActiveTab] = React.useState<'identity' | 'logs' | 'shell' | 'drives' | 'probe'>(initialTab);
+  const [activeTab, setActiveTab] = React.useState<'identity' | 'logs' | 'shell' | 'drives' | 'probe' | 'grouppolicy'>(initialTab);
   const [blueprint, setBlueprint] = React.useState<ShellExtensionBlueprint | null>(null);
   const [regFile, setRegFile] = React.useState<string>('');
   const [targetServer, setTargetServer] = React.useState('');
@@ -255,6 +268,17 @@ export const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({
             }`}
           >
             Probe Custom Server
+          </button>
+          <button
+            onClick={() => setActiveTab('grouppolicy')}
+            className={`py-2 px-3 border-b-2 font-medium transition whitespace-nowrap flex items-center gap-1.5 ${
+              activeTab === 'grouppolicy'
+                ? 'border-indigo-500 text-indigo-400'
+                : 'border-transparent text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <RotateCcw className={`w-3 h-3 ${isGpUpdating ? 'animate-spin' : ''}`} />
+            <span>Group Policy (Phase 4)</span>
           </button>
         </div>
 
@@ -687,6 +711,137 @@ export const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({
                 {probeMessage && (
                   <div className="mt-3 p-2 rounded bg-slate-900 border border-slate-700 text-xs text-blue-300 font-mono">
                     {probeMessage}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* TAB 6: GROUP POLICY (PHASE 4) */}
+          {activeTab === 'grouppolicy' && (
+            <div className="space-y-4">
+              <div className="bg-slate-950 p-4 rounded-lg border border-slate-800 space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-3">
+                  <div>
+                    <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+                      <Terminal className="w-4 h-4 text-indigo-400" />
+                      Group Policy Update & Automatic Share Refresh
+                    </h3>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      Executes native Windows <code className="text-indigo-300">gpupdate /force</code>, re-discovers authorized SMB shares, and synchronizes Explorer Namespace.
+                    </p>
+                  </div>
+
+                  {onRefreshGroupPolicy && (
+                    <button
+                      onClick={onRefreshGroupPolicy}
+                      disabled={isGpUpdating}
+                      className="flex items-center gap-2 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:bg-indigo-900/50 text-white font-medium rounded text-xs transition shadow-sm self-start sm:self-auto"
+                    >
+                      <RotateCcw className={`w-3.5 h-3.5 ${isGpUpdating ? 'animate-spin' : ''}`} />
+                      <span>{isGpUpdating ? 'Updating Group Policy...' : 'Run gpupdate /force'}</span>
+                    </button>
+                  )}
+                </div>
+
+                {/* Execution State Summary */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 pt-1">
+                  <div className="bg-slate-900/80 border border-slate-800 rounded p-2.5">
+                    <span className="text-[10px] uppercase text-slate-500 font-semibold block">Command</span>
+                    <span className="text-xs font-mono font-medium text-indigo-300 block mt-0.5">
+                      gpupdate /force
+                    </span>
+                  </div>
+
+                  <div className="bg-slate-900/80 border border-slate-800 rounded p-2.5">
+                    <span className="text-[10px] uppercase text-slate-500 font-semibold block">Last Exit Code</span>
+                    <span className={`text-xs font-mono font-semibold block mt-0.5 ${
+                      lastGpResult?.gpupdate.exitCode === 0
+                        ? 'text-emerald-400'
+                        : lastGpResult?.gpupdate.exitCode !== undefined
+                        ? 'text-rose-400'
+                        : 'text-slate-400'
+                    }`}>
+                      {lastGpResult?.gpupdate.exitCode !== undefined && lastGpResult?.gpupdate.exitCode !== null
+                        ? `Code ${lastGpResult.gpupdate.exitCode}`
+                        : 'Not Run'}
+                    </span>
+                  </div>
+
+                  <div className="bg-slate-900/80 border border-slate-800 rounded p-2.5">
+                    <span className="text-[10px] uppercase text-slate-500 font-semibold block">Duration</span>
+                    <span className="text-xs font-mono text-slate-200 block mt-0.5">
+                      {lastGpResult?.gpupdate.durationMs ? `${lastGpResult.gpupdate.durationMs}ms` : '—'}
+                    </span>
+                  </div>
+
+                  <div className="bg-slate-900/80 border border-slate-800 rounded p-2.5">
+                    <span className="text-[10px] uppercase text-slate-500 font-semibold block">Status</span>
+                    <span className="text-xs font-medium text-white block mt-0.5">
+                      {isGpUpdating
+                        ? 'Updating...'
+                        : lastGpResult?.success
+                        ? 'Completed'
+                        : lastGpResult?.success === false
+                        ? 'Failed'
+                        : 'Idle'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Group Policy Raw Output */}
+                <div className="space-y-1.5 pt-2">
+                  <span className="text-[11px] font-semibold text-slate-300 block">
+                    Process Standard Output (stdout):
+                  </span>
+                  <pre className="bg-slate-900 border border-slate-800 rounded p-3 text-[11px] font-mono text-emerald-300/90 whitespace-pre-wrap overflow-x-auto max-h-40">
+                    {lastGpResult?.gpupdate.stdout || 'Updating policy...\n\nComputer Policy update has completed successfully.\nUser Policy update has completed successfully.'}
+                  </pre>
+                </div>
+
+                {lastGpResult?.gpupdate.stderr && (
+                  <div className="space-y-1.5 pt-1">
+                    <span className="text-[11px] font-semibold text-rose-300 block">
+                      Process Error Output (stderr):
+                    </span>
+                    <pre className="bg-rose-950/40 border border-rose-800 rounded p-3 text-[11px] font-mono text-rose-300 whitespace-pre-wrap overflow-x-auto max-h-32">
+                      {lastGpResult.gpupdate.stderr}
+                    </pre>
+                  </div>
+                )}
+
+                {/* Diff Breakdown */}
+                {lastGpResult?.diff && (
+                  <div className="pt-2 border-t border-slate-800 space-y-2">
+                    <span className="text-xs font-semibold text-white block">
+                      Share Accessibility Changes After Group Policy:
+                    </span>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                      <div className="bg-slate-900 p-2 rounded border border-slate-800">
+                        <span className="text-[10px] text-slate-500 block">Newly Accessible</span>
+                        <span className="text-sm font-bold text-emerald-400">
+                          +{lastGpResult.diff.summary.newCount}
+                        </span>
+                      </div>
+                      <div className="bg-slate-900 p-2 rounded border border-slate-800">
+                        <span className="text-[10px] text-slate-500 block">Access Revoked</span>
+                        <span className="text-sm font-bold text-amber-400">
+                          {lastGpResult.diff.summary.removedCount}
+                        </span>
+                      </div>
+                      <div className="bg-slate-900 p-2 rounded border border-slate-800">
+                        <span className="text-[10px] text-slate-500 block">Offline Servers</span>
+                        <span className="text-sm font-bold text-rose-400">
+                          {lastGpResult.diff.summary.offlineCount}
+                        </span>
+                      </div>
+                      <div className="bg-slate-900 p-2 rounded border border-slate-800">
+                        <span className="text-[10px] text-slate-500 block">Explorer Shortcuts</span>
+                        <span className="text-sm font-bold text-indigo-400">
+                          {lastGpResult.shellStatus.activeShortcuts.length}
+                        </span>
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>

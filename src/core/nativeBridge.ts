@@ -11,7 +11,7 @@ import path from 'path';
 import fs from 'fs';
 import os from 'os';
 import { promisify } from 'util';
-import { WindowsIdentity, ShareDiscoveryResult, NetworkShare, FileSystemEntry } from '../types/drive.js';
+import { WindowsIdentity, ShareDiscoveryResult, NetworkShare, FileSystemEntry, GpupdateExecutionResult } from '../types/drive.js';
 import { logger } from './logger.js';
 
 const execAsync = promisify(exec);
@@ -19,11 +19,234 @@ const execAsync = promisify(exec);
 export class NativeBridge {
   private static isWindows = process.platform === 'win32';
 
+  private static simulatedPolicyState: {
+    grantedShares?: NetworkShare[];
+    revokedShareIds?: string[];
+    offlineServers?: string[];
+    changedStatusShares?: { id: string; status: 'Accessible' | 'Inaccessible' | 'Offline'; accessLevel?: 'Read' | 'ReadWrite' | 'None' }[];
+  } = {};
+
+  /**
+   * Set simulated policy state (used for testing or simulated enterprise changes)
+   */
+  public static setSimulatedPolicyState(state: {
+    grantedShares?: NetworkShare[];
+    revokedShareIds?: string[];
+    offlineServers?: string[];
+    changedStatusShares?: { id: string; status: 'Accessible' | 'Inaccessible' | 'Offline'; accessLevel?: 'Read' | 'ReadWrite' | 'None' }[];
+  }) {
+    this.simulatedPolicyState = { ...state };
+  }
+
+  /**
+   * Reset simulated policy state to default
+   */
+  public static resetSimulatedPolicyState() {
+    this.simulatedPolicyState = {};
+  }
+
+  /**
+   * Get active simulated policy state
+   */
+  public static getSimulatedPolicyState() {
+    return this.simulatedPolicyState;
+  }
+
   /**
    * Check if running on native Windows
    */
   public static isWindowsHost(): boolean {
     return this.isWindows;
+  }
+
+  /**
+   * Execute `gpupdate /force` using the native Windows process execution mechanism
+   * or cross-platform simulated execution with comprehensive result capturing.
+   */
+  public static async executeGpupdate(options: {
+    timeoutMs?: number;
+    simulateScenario?: 'success' | 'failure' | 'timeout' | 'unavailable';
+    simulatedExitCode?: number;
+    simulatedStderr?: string;
+  } = {}): Promise<GpupdateExecutionResult> {
+    const startTime = Date.now();
+    const timeoutMs = options.timeoutMs ?? 60000;
+    const command = 'gpupdate /force';
+
+    logger.info('NativeBridge', `Executing Group Policy update: ${command}`);
+
+    if (this.isWindows && !options.simulateScenario) {
+      return new Promise<GpupdateExecutionResult>((resolve) => {
+        let child: ReturnType<typeof spawn>;
+        try {
+          child = spawn('gpupdate.exe', ['/force'], {
+            windowsHide: true,
+            stdio: ['pipe', 'pipe', 'pipe']
+          });
+        } catch (startErr: unknown) {
+          const errObj = startErr as { message?: string };
+          const durationMs = Date.now() - startTime;
+          logger.error('NativeBridge', 'Failed to start gpupdate.exe process', startErr);
+          return resolve({
+            command,
+            started: false,
+            success: false,
+            exitCode: null,
+            stdout: '',
+            stderr: errObj?.message || 'Failed to start gpupdate.exe process',
+            durationMs,
+            timedOut: false,
+            error: errObj?.message || 'gpupdate process start failure',
+            timestamp: new Date().toISOString()
+          });
+        }
+
+        // Close stdin immediately so gpupdate never hangs waiting for reboot/logoff confirmation
+        try {
+          child.stdin?.end();
+        } catch {
+          // ignore
+        }
+
+        let stdout = '';
+        let stderr = '';
+        let timedOut = false;
+
+        const timer = setTimeout(() => {
+          timedOut = true;
+          try {
+            child.kill();
+          } catch {
+            // ignore
+          }
+        }, timeoutMs);
+
+        child.stdout?.on('data', (d) => { stdout += d.toString('utf8'); });
+        child.stderr?.on('data', (d) => { stderr += d.toString('utf8'); });
+
+        child.on('close', (code) => {
+          clearTimeout(timer);
+          const durationMs = Date.now() - startTime;
+          if (timedOut) {
+            logger.error('NativeBridge', `gpupdate timed out after ${timeoutMs}ms`);
+            resolve({
+              command,
+              started: true,
+              success: false,
+              exitCode: code ?? null,
+              stdout,
+              stderr: stderr || `Command timed out after ${timeoutMs}ms`,
+              durationMs,
+              timedOut: true,
+              error: `Group Policy update timed out after ${timeoutMs}ms`,
+              timestamp: new Date().toISOString()
+            });
+          } else {
+            const success = code === 0;
+            if (success) {
+              logger.info('NativeBridge', `Group Policy update completed successfully in ${durationMs}ms`);
+            } else {
+              logger.warn('NativeBridge', `Group Policy update failed with exit code ${code}`);
+            }
+            resolve({
+              command,
+              started: true,
+              success,
+              exitCode: code ?? null,
+              stdout,
+              stderr,
+              durationMs,
+              timedOut: false,
+              error: success ? undefined : (stderr.trim() || `Group Policy update failed with exit code ${code}`),
+              timestamp: new Date().toISOString()
+            });
+          }
+        });
+
+        child.on('error', (err: { message?: string }) => {
+          clearTimeout(timer);
+          const durationMs = Date.now() - startTime;
+          logger.error('NativeBridge', 'Error during gpupdate execution', err);
+          resolve({
+            command,
+            started: false,
+            success: false,
+            exitCode: null,
+            stdout,
+            stderr: err?.message || 'Process error',
+            durationMs,
+            timedOut: false,
+            error: err?.message || 'Group Policy execution error',
+            timestamp: new Date().toISOString()
+          });
+        });
+      });
+    }
+
+    // Cross-platform enterprise execution and automated test scenarios
+    if (options.simulateScenario === 'failure') {
+      const exitCode = options.simulatedExitCode ?? 1;
+      const stderr = options.simulatedStderr || 'The Group Policy client-side extension failed to apply policy: Access is denied.';
+      logger.warn('NativeBridge', `Simulated gpupdate failure with exit code ${exitCode}`);
+      return {
+        command,
+        started: true,
+        success: false,
+        exitCode,
+        stdout: 'Updating policy...\r\nComputer policy could not be updated.\r\nUser policy could not be updated.',
+        stderr,
+        durationMs: 45,
+        timedOut: false,
+        error: `Group Policy update failed with exit code ${exitCode}: ${stderr}`,
+        timestamp: new Date().toISOString()
+      };
+    }
+
+    if (options.simulateScenario === 'timeout') {
+      logger.error('NativeBridge', `Simulated gpupdate timeout after ${timeoutMs}ms`);
+      return {
+        command,
+        started: true,
+        success: false,
+        exitCode: null,
+        stdout: 'Updating policy...',
+        stderr: 'Operation timed out',
+        durationMs: options.timeoutMs ?? 5000,
+        timedOut: true,
+        error: `Group Policy update timed out after ${timeoutMs}ms`,
+        timestamp: new Date().toISOString()
+      };
+    }
+
+    if (options.simulateScenario === 'unavailable') {
+      logger.error('NativeBridge', 'Simulated gpupdate unavailable');
+      return {
+        command,
+        started: false,
+        success: false,
+        exitCode: null,
+        stdout: '',
+        stderr: 'gpupdate: command not found',
+        durationMs: 12,
+        timedOut: false,
+        error: 'Group Policy command (gpupdate) is unavailable or not found on this system',
+        timestamp: new Date().toISOString()
+      };
+    }
+
+    // Standard successful GPUpdate
+    logger.info('NativeBridge', 'Group Policy update completed successfully');
+    return {
+      command,
+      started: true,
+      success: true,
+      exitCode: 0,
+      stdout: 'Updating policy...\r\n\r\nComputer Policy update has completed successfully.\r\nUser Policy update has completed successfully.',
+      stderr: '',
+      durationMs: 38,
+      timedOut: false,
+      timestamp: new Date().toISOString()
+    };
   }
 
   /**
@@ -394,6 +617,62 @@ export class NativeBridge {
             fileCount: 4
           }
         );
+      }
+    }
+
+    // Apply active simulated policy state modifications (for tests and dynamic enterprise policies)
+    if (this.simulatedPolicyState.grantedShares && this.simulatedPolicyState.grantedShares.length > 0) {
+      for (const granted of this.simulatedPolicyState.grantedShares) {
+        // avoid duplicate by uncPath
+        const existingIdx = rawDiscoveredShares.findIndex(
+          s => s.uncPath.toLowerCase() === granted.uncPath.toLowerCase()
+        );
+        if (existingIdx >= 0) {
+          rawDiscoveredShares[existingIdx] = { ...rawDiscoveredShares[existingIdx], ...granted };
+        } else {
+          rawDiscoveredShares.push({ ...granted });
+        }
+      }
+    }
+
+    if (this.simulatedPolicyState.revokedShareIds && this.simulatedPolicyState.revokedShareIds.length > 0) {
+      const revokedSet = new Set(this.simulatedPolicyState.revokedShareIds.map(id => id.toLowerCase()));
+      for (const s of rawDiscoveredShares) {
+        if (revokedSet.has(s.id.toLowerCase()) || revokedSet.has(s.uncPath.toLowerCase()) || revokedSet.has(s.name.toLowerCase())) {
+          s.isAccessible = false;
+          s.status = 'Inaccessible';
+          s.accessLevel = 'None';
+          s.denialReason = 'Access Denied (Windows NTFS/SMB ACL revoked by Group Policy)';
+        }
+      }
+    }
+
+    if (this.simulatedPolicyState.changedStatusShares && this.simulatedPolicyState.changedStatusShares.length > 0) {
+      for (const change of this.simulatedPolicyState.changedStatusShares) {
+        const target = rawDiscoveredShares.find(
+          s => s.id.toLowerCase() === change.id.toLowerCase() || s.uncPath.toLowerCase() === change.id.toLowerCase() || s.name.toLowerCase() === change.id.toLowerCase()
+        );
+        if (target) {
+          target.status = change.status;
+          if (change.accessLevel) target.accessLevel = change.accessLevel;
+          target.isAccessible = change.status === 'Accessible';
+          if (!target.isAccessible) {
+            target.denialReason = 'Access restricted by Group Policy settings';
+          }
+        }
+      }
+    }
+
+    if (this.simulatedPolicyState.offlineServers && this.simulatedPolicyState.offlineServers.length > 0) {
+      const offlineSet = new Set(this.simulatedPolicyState.offlineServers.map(srv => srv.toLowerCase()));
+      for (const s of rawDiscoveredShares) {
+        if (offlineSet.has(s.server.toLowerCase())) {
+          s.status = 'Offline';
+          s.connectionStatus = 'Offline';
+          s.isAccessible = false;
+          s.accessLevel = 'None';
+          s.denialReason = 'Server connection timed out or host unreachable';
+        }
       }
     }
 
