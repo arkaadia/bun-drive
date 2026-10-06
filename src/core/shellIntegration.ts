@@ -13,7 +13,9 @@ import {
   ShellIntegrationState,
   ShellShortcutEntry,
   ShellSyncResult,
-  MappedDriveLetter
+  MappedDriveLetter,
+  DriveMappingConflict,
+  AvailableDriveLetter
 } from '../types/drive.js';
 import {
   BUN_DRIVE_CLSID,
@@ -319,12 +321,53 @@ export class ShellIntegrationService {
   }
 
   /**
-   * Map an authorized network share to a Windows drive letter (e.g., Z:)
+   * Check if a drive letter is already in use by a mapped network share
+   */
+  public checkDriveConflict(driveLetter: string): DriveMappingConflict {
+    const cleanLetter = driveLetter.trim().toUpperCase().replace(/:$/, '') + ':';
+    const existing = this.mappedDrives.find(d => d.driveLetter === cleanLetter);
+    if (existing) {
+      return {
+        hasConflict: true,
+        driveLetter: cleanLetter,
+        existingTarget: existing.uncPath,
+        existingMapping: existing,
+        message: `Drive letter ${cleanLetter} is already mapped to ${existing.uncPath} (${existing.shareName})`
+      };
+    }
+    return {
+      hasConflict: false,
+      driveLetter: cleanLetter
+    };
+  }
+
+  /**
+   * List all drive letters D: through Z: with their availability and current mappings
+   */
+  public getAvailableDriveLetters(): AvailableDriveLetter[] {
+    const letters = 'DEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+    const mappedMap = new Map(this.mappedDrives.map(d => [d.driveLetter, d.uncPath]));
+
+    return letters.map(char => {
+      const letter = `${char}:`;
+      const currentTarget = mappedMap.get(letter);
+      return {
+        letter,
+        isMapped: Boolean(currentTarget),
+        currentTarget
+      };
+    });
+  }
+
+  /**
+   * Map an authorized network share or subfolder to a Windows drive letter (e.g., Z:)
+   * Phase 3: detects conflicts and safely replaces existing mapping if replaceExisting is true.
    */
   public async mapDriveLetter(
     driveLetter: string,
     uncPath: string,
-    persistent = true
+    persistent = true,
+    replaceExisting = false
   ): Promise<MappedDriveLetter> {
     const cleanLetter = driveLetter.trim().toUpperCase().replace(/:$/, '') + ':';
     if (!/^[D-Z]:$/.test(cleanLetter)) {
@@ -334,12 +377,26 @@ export class ShellIntegrationService {
       throw new Error(`Invalid UNC path "${uncPath}". Must start with \\\\Server\\Share.`);
     }
 
+    // Check conflict with existing mapping
+    const conflict = this.checkDriveConflict(cleanLetter);
+    if (conflict.hasConflict && !replaceExisting) {
+      const err = new Error(conflict.message || `Drive letter ${cleanLetter} is already in use.`);
+      (err as unknown as { isConflict: boolean; conflictData: DriveMappingConflict }).isConflict = true;
+      (err as unknown as { isConflict: boolean; conflictData: DriveMappingConflict }).conflictData = conflict;
+      throw err;
+    }
+
+    if (conflict.hasConflict && replaceExisting) {
+      logger.info('ShellIntegration', `Replacing existing mapping on ${cleanLetter} (was ${conflict.existingTarget})`);
+      await this.unmapDriveLetter(cleanLetter);
+    }
+
     logger.info('ShellIntegration', `Mapping network drive ${cleanLetter} -> ${uncPath} (Persistent: ${persistent})`);
 
     if (NativeBridge.isWindowsHost()) {
       const scriptPath = path.resolve(process.cwd(), 'scripts', 'bun-drive-shell-mount.ps1');
       await NativeBridge.runPowerShell(
-        `& '${scriptPath}' -Action MapDrive -DriveLetter '${cleanLetter}' -UncPath '${uncPath}' -Persistent $${persistent}`,
+        `& '${scriptPath}' -Action MapDrive -DriveLetter '${cleanLetter}' -UncPath '${uncPath}' -Persistent $${persistent} -ReplaceExisting $${replaceExisting}`,
         10000
       );
     }

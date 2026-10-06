@@ -7,6 +7,7 @@ import { HeaderBar } from './components/HeaderBar.js';
 import { Sidebar } from './components/Sidebar.js';
 import { SharesView } from './components/SharesView.js';
 import { FolderBrowser } from './components/FolderBrowser.js';
+import { NetworkSharesManager } from './components/NetworkSharesManager.js';
 import { DiagnosticsModal } from './components/DiagnosticsModal.js';
 import { StatusFooter } from './components/StatusFooter.js';
 import { NetworkShare, WindowsIdentity, BrowseResult, LogEntry, ShellIntegrationState } from './types/drive.js';
@@ -26,6 +27,7 @@ export default function App() {
   const [isBrowsingLoading, setIsBrowsingLoading] = useState<boolean>(false);
 
   // UI State
+  const [activeTab, setActiveTab] = useState<'manager' | 'explorer'>('manager');
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const [viewMode, setViewMode] = useState<'tiles' | 'details'>('tiles');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -95,7 +97,7 @@ export default function App() {
         setScanDurationMs(data.scanDurationMs || 0);
         setLastScannedTime(data.timestamp || new Date().toISOString());
         if (data.identity) setIdentity(data.identity);
-        loadShellStatus();
+        await loadShellStatus();
         loadLogs();
         
         // If currently in a share, refresh browse data too
@@ -137,17 +139,18 @@ export default function App() {
     }
   };
 
-  const handleMapDrive = async (driveLetter: string, uncPath: string, persistent: boolean) => {
+  const handleMapDrive = async (driveLetter: string, uncPath: string, persistent: boolean, replaceExisting = false) => {
     const res = await fetch('/api/shell/map-drive', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ driveLetter, uncPath, persistent })
+      body: JSON.stringify({ driveLetter, uncPath, persistent, replaceExisting })
     });
     const data = await res.json();
     if (!res.ok) {
       throw new Error(data.error || 'Failed to map network drive');
     }
     if (data.status) setShellState(data.status);
+    await loadShares();
     loadLogs();
   };
 
@@ -160,6 +163,7 @@ export default function App() {
     if (res.ok) {
       const data = await res.json();
       if (data.status) setShellState(data.status);
+      await loadShares();
       loadLogs();
     }
   };
@@ -287,19 +291,78 @@ export default function App() {
 
         {/* Content Pane */}
         <main className="flex-1 flex flex-col overflow-hidden bg-slate-950">
+          {/* Phase 3 & Explorer Mode Switcher */}
+          <div className="bg-slate-900/90 border-b border-slate-800 px-3 py-1.5 flex flex-wrap items-center justify-between gap-2 text-xs">
+            <div className="flex items-center gap-1 bg-slate-950 p-0.5 rounded border border-slate-800">
+              <button
+                onClick={() => { setActiveTab('manager'); if (!isRootView) handleSelectRoot(); }}
+                className={`px-3 py-1 rounded text-xs font-medium transition ${
+                  activeTab === 'manager' && isRootView
+                    ? 'bg-blue-600 text-white shadow'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                Network Shares Management
+              </button>
+              <button
+                onClick={() => { setActiveTab('explorer'); if (!isRootView) handleSelectRoot(); }}
+                className={`px-3 py-1 rounded text-xs font-medium transition ${
+                  activeTab === 'explorer' && isRootView
+                    ? 'bg-blue-600 text-white shadow'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                Explorer Namespace View
+              </button>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => openDiagnosticsWithTab('drives')}
+                className="px-2.5 py-1 bg-slate-800 hover:bg-slate-750 text-slate-300 rounded border border-slate-700 text-[11px]"
+                title="Manage mapped drive letters"
+              >
+                Drive Mappings ({shellState?.mappedDrives.length || 0})
+              </button>
+              <button
+                onClick={() => openDiagnosticsWithTab('shell')}
+                className="px-2.5 py-1 bg-slate-800 hover:bg-slate-750 text-emerald-300 rounded border border-slate-700 text-[11px]"
+                title="Windows Explorer Shell Namespace configuration"
+              >
+                {shellState?.isRegisteredInExplorer ? 'Explorer Mounted' : 'Mount in Explorer'}
+              </button>
+            </div>
+          </div>
+
           {isRootView ? (
-            <SharesView
-              shares={shares}
-              inaccessibleCount={inaccessibleCount}
-              onOpenShare={handleSelectShare}
-              onOpenInExplorer={(p) => handleOpenInExplorer(p)}
-              onOpenDiagnostics={(tab) => openDiagnosticsWithTab(tab || 'identity')}
-              viewMode={viewMode}
-              identity={identity}
-              searchQuery={searchQuery}
-              shellState={shellState}
-              onQuickSyncShell={handleSyncShell}
-            />
+            activeTab === 'manager' ? (
+              <NetworkSharesManager
+                identity={identity}
+                shares={shares}
+                inaccessibleCount={inaccessibleCount}
+                shellState={shellState}
+                isRefreshing={isRefreshing}
+                onRefreshShares={handleRefresh}
+                onMapDrive={handleMapDrive}
+                onUnmapDrive={handleUnmapDrive}
+                onOpenInExplorer={(p) => handleOpenInExplorer(p)}
+                logs={logs}
+                onRefreshLogs={loadLogs}
+              />
+            ) : (
+              <SharesView
+                shares={shares}
+                inaccessibleCount={inaccessibleCount}
+                onOpenShare={handleSelectShare}
+                onOpenInExplorer={(p) => handleOpenInExplorer(p)}
+                onOpenDiagnostics={(tab) => openDiagnosticsWithTab(tab || 'identity')}
+                viewMode={viewMode}
+                identity={identity}
+                searchQuery={searchQuery}
+                shellState={shellState}
+                onQuickSyncShell={handleSyncShell}
+              />
+            )
           ) : (
             <FolderBrowser
               browseResult={browseResult}

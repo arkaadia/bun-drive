@@ -86,11 +86,23 @@ export class NativeBridge {
           $domain = $env:USERDOMAIN
           $dnsDomain = $env:USERDNSDOMAIN
           $isJoined = $false
+          $workgroupStatus = "Standalone"
+          try {
+            $cs = Get-CimInstance Win32_ComputerSystem -ErrorAction SilentlyContinue
+            if ($cs) {
+              if ($cs.PartOfDomain) {
+                $isJoined = $true
+                $workgroupStatus = "Domain Joined ($($cs.Domain))"
+              } elseif ($cs.Workgroup) {
+                $workgroupStatus = "Workgroup ($($cs.Workgroup))"
+              }
+            }
+          } catch {}
           try {
             $ad = [System.DirectoryServices.ActiveDirectory.Domain]::GetCurrentDomain()
-            if ($ad) { $isJoined = $true; $dnsDomain = $ad.Name }
+            if ($ad) { $isJoined = $true; $dnsDomain = $ad.Name; $workgroupStatus = "Domain Joined ($($ad.Name))" }
           } catch {
-            if ($env:USERDNSDOMAIN) { $isJoined = $true }
+            if ($env:USERDNSDOMAIN) { $isJoined = $true; $workgroupStatus = "Domain Joined ($env:USERDNSDOMAIN)" }
           }
           [ordered]@{
             username = $id.Name
@@ -99,6 +111,7 @@ export class NativeBridge {
             dnsDomain = $dnsDomain
             userSid = $id.User.Value
             isDomainJoined = $isJoined
+            workgroupStatus = $workgroupStatus
             domainController = if ($env:LOGONSERVER) { $env:LOGONSERVER.TrimStart('\\\\') } else { $null }
             logonServer = $env:LOGONSERVER
             authType = if ($id.AuthenticationType) { $id.AuthenticationType } else { 'Kerberos' }
@@ -128,6 +141,7 @@ export class NativeBridge {
       dnsDomain: envDnsDomain,
       userSid: 'S-1-5-21-2894172819-1481920491-381940182-1104',
       isDomainJoined: isDomain || true, // Represents enterprise AD domain computer
+      workgroupStatus: `Domain Joined (${envDomain})`,
       domainController: `DC01.${envDnsDomain}`,
       logonServer: `\\\\DC01`,
       authType: 'Kerberos',
@@ -191,6 +205,26 @@ export class NativeBridge {
     const rawDiscoveredShares: NetworkShare[] = [];
 
     for (const srv of servers) {
+      if (srv.toLowerCase().includes('offline') || srv.toLowerCase().includes('unreachable')) {
+        rawDiscoveredShares.push({
+          id: `\\\\${srv}`,
+          name: '(Offline Server)',
+          server: srv,
+          uncPath: `\\\\${srv}`,
+          description: 'Server unreachable or offline',
+          isAccessible: false,
+          accessLevel: 'None',
+          status: 'Offline',
+          connectionStatus: 'Offline',
+          mappedDrive: null,
+          denialReason: 'Server connection timed out or host unreachable',
+          discoverySource: 'AD_LDAP',
+          responseTimeMs: 2000,
+          lastChecked: new Date().toISOString()
+        });
+        continue;
+      }
+
       if (srv.toLowerCase().includes('fs01') || srv.toLowerCase().includes('public') || isTargeted) {
         rawDiscoveredShares.push(
           {
@@ -201,6 +235,9 @@ export class NativeBridge {
             description: 'General Organization Repository and Templates',
             isAccessible: true,
             accessLevel: 'ReadWrite',
+            status: 'Accessible',
+            connectionStatus: 'Online',
+            mappedDrive: null,
             discoverySource: 'AD_LDAP',
             responseTimeMs: 14,
             lastChecked: new Date().toISOString(),
@@ -215,6 +252,9 @@ export class NativeBridge {
             description: 'Campaign Assets, Brand Guidelines & Media Kits',
             isAccessible: true,
             accessLevel: 'ReadWrite',
+            status: 'Accessible',
+            connectionStatus: 'Online',
+            mappedDrive: null,
             discoverySource: 'AD_LDAP',
             responseTimeMs: 18,
             lastChecked: new Date().toISOString(),
@@ -229,6 +269,9 @@ export class NativeBridge {
             description: 'Fiscal Audits and Quarterly Statements (Read-Only)',
             isAccessible: true,
             accessLevel: 'Read',
+            status: 'Accessible',
+            connectionStatus: 'Online',
+            mappedDrive: null,
             discoverySource: 'AD_LDAP',
             responseTimeMs: 22,
             lastChecked: new Date().toISOString(),
@@ -248,6 +291,9 @@ export class NativeBridge {
             description: 'Architecture RFCs, Specifications and Build Drops',
             isAccessible: true,
             accessLevel: 'ReadWrite',
+            status: 'Accessible',
+            connectionStatus: 'Online',
+            mappedDrive: null,
             discoverySource: 'DFS_ROOT',
             responseTimeMs: 11,
             lastChecked: new Date().toISOString(),
@@ -262,6 +308,9 @@ export class NativeBridge {
             description: 'Approved Windows Utilities and Software Packages',
             isAccessible: true,
             accessLevel: 'Read',
+            status: 'Accessible',
+            connectionStatus: 'Online',
+            mappedDrive: null,
             discoverySource: 'DFS_ROOT',
             responseTimeMs: 16,
             lastChecked: new Date().toISOString(),
@@ -281,6 +330,9 @@ export class NativeBridge {
             description: 'Confidential Executive Leadership Documents',
             isAccessible: false,
             accessLevel: 'None',
+            status: 'Inaccessible',
+            connectionStatus: 'Online',
+            mappedDrive: null,
             denialReason: 'Access Denied (Windows NTFS/SMB ACL restricts access to domain\\Executive-Group)',
             discoverySource: 'AD_LDAP',
             responseTimeMs: 19,
@@ -294,6 +346,9 @@ export class NativeBridge {
             description: 'Personnel Records and Payroll Database',
             isAccessible: false,
             accessLevel: 'None',
+            status: 'Inaccessible',
+            connectionStatus: 'Online',
+            mappedDrive: null,
             denialReason: 'Access Denied (Error 5: ERROR_ACCESS_DENIED)',
             discoverySource: 'AD_LDAP',
             responseTimeMs: 20,
@@ -312,6 +367,9 @@ export class NativeBridge {
             description: 'Active Directory System Volume & Group Policy Objects',
             isAccessible: true,
             accessLevel: 'Read',
+            status: 'Accessible',
+            connectionStatus: 'Online',
+            mappedDrive: null,
             discoverySource: 'LOGON_SERVER',
             responseTimeMs: 8,
             lastChecked: new Date().toISOString(),
@@ -326,6 +384,9 @@ export class NativeBridge {
             description: 'Logon Scripts & Domain Controller Policies',
             isAccessible: true,
             accessLevel: 'Read',
+            status: 'Accessible',
+            connectionStatus: 'Online',
+            mappedDrive: null,
             discoverySource: 'LOGON_SERVER',
             responseTimeMs: 9,
             lastChecked: new Date().toISOString(),

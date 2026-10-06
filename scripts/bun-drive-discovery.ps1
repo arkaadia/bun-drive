@@ -67,12 +67,26 @@ try {
     $domainController = $null
     $authType = $windowsIdentity.AuthenticationType
     if (-not $authType) { $authType = "Negotiate" }
+    $workgroupStatus = "Standalone"
+
+    try {
+        $cs = Get-CimInstance -ClassName Win32_ComputerSystem -ErrorAction SilentlyContinue
+        if ($cs) {
+            if ($cs.PartOfDomain) {
+                $isDomainJoined = $true
+                $workgroupStatus = "Domain Joined ($($cs.Domain))"
+            } elseif ($cs.Workgroup) {
+                $workgroupStatus = "Workgroup ($($cs.Workgroup))"
+            }
+        }
+    } catch {}
 
     try {
         $adDomain = [System.DirectoryServices.ActiveDirectory.Domain]::GetCurrentDomain()
         if ($adDomain) {
             $isDomainJoined = $true
             $dnsDomain = $adDomain.Name
+            $workgroupStatus = "Domain Joined ($($adDomain.Name))"
             $dc = $adDomain.FindDomainController()
             if ($dc) {
                 $domainController = $dc.Name
@@ -82,6 +96,7 @@ try {
         # Fallback to environment/WMI
         if ($env:USERDNSDOMAIN) {
             $isDomainJoined = $true
+            $workgroupStatus = "Domain Joined ($env:USERDNSDOMAIN)"
         }
     }
 
@@ -97,6 +112,7 @@ try {
         dnsDomain = $dnsDomain
         userSid = $userSid
         isDomainJoined = $isDomainJoined
+        workgroupStatus = $workgroupStatus
         domainController = $domainController
         logonServer = $logonServer
         authType = $authType
@@ -104,7 +120,7 @@ try {
         computerName = $env:COMPUTERNAME
     }
 
-    Write-DiagLog "INFO" "Resolved Windows user: $fullUserName (Domain: $domainPart, Domain-Joined: $isDomainJoined)"
+    Write-DiagLog "INFO" "Resolved Windows user: $fullUserName (Domain: $domainPart, Status: $workgroupStatus)"
 } catch {
     Write-DiagLog "ERROR" "Failed to query Windows Identity: $_"
 }
@@ -160,7 +176,27 @@ if ($TargetServers -and $TargetServers.Count -gt 0) {
 $result.serversScanned = @($candidateServers)
 Write-DiagLog "INFO" "Scanning $($candidateServers.Count) target server(s) for SMB shares..."
 
-# 3. Discover and Validate Network Shares
+# 3. Detect Existing Mapped Network Drives
+$mappedDriveLookup = @{}
+try {
+    $smbMappings = Get-SmbMapping -ErrorAction SilentlyContinue
+    foreach ($m in $smbMappings) {
+        if ($m.RemotePath -and $m.LocalPath) {
+            $mappedDriveLookup[$m.RemotePath.TrimEnd('\').ToLower()] = $m.LocalPath
+        }
+    }
+} catch {
+    try {
+        $wmiDrives = Get-CimInstance -ClassName Win32_MappedLogicalDisk -ErrorAction SilentlyContinue
+        foreach ($d in $wmiDrives) {
+            if ($d.ProviderName -and $d.DeviceID) {
+                $mappedDriveLookup[$d.ProviderName.TrimEnd('\').ToLower()] = $d.DeviceID
+            }
+        }
+    } catch {}
+}
+
+# 4. Discover and Validate Network Shares
 $discoveredShares = @()
 $inaccessibleCount = 0
 
@@ -168,6 +204,47 @@ foreach ($server in $candidateServers) {
     if ([string]::IsNullOrWhiteSpace($server)) { continue }
 
     Write-DiagLog "INFO" "Probing server: $server"
+
+    # Quick reachability check (ICMP or SMB port 445)
+    $serverReachable = $true
+    try {
+        $tcpClient = New-Object System.Net.Sockets.TcpClient
+        $connectAsync = $tcpClient.BeginConnect($server, 445, $null, $null)
+        $waitHandle = $connectAsync.AsyncWaitHandle.WaitOne(2000, $false)
+        if (-not $waitHandle) {
+            $serverReachable = $false
+            $tcpClient.Close()
+        } else {
+            $tcpClient.EndConnect($connectAsync)
+            $tcpClient.Close()
+        }
+    } catch {
+        $serverReachable = $false
+    }
+
+    if (-not $serverReachable) {
+        Write-DiagLog "WARN" "Server $server is unreachable or offline (port 445 closed / timed out)"
+        if ($IncludeInaccessible) {
+            $discoveredShares += [ordered]@{
+                id = "\\$server"
+                name = "(Offline Server)"
+                server = $server
+                uncPath = "\\$server"
+                description = "Server offline / unreachable"
+                isAccessible = $false
+                accessLevel = "None"
+                status = "Offline"
+                connectionStatus = "Offline"
+                mappedDrive = $null
+                denialReason = "Server is unreachable or SMB port 445 connection timed out"
+                discoverySource = "AD_LDAP"
+                responseTimeMs = 2000
+                lastChecked = (Get-Date -Format "o")
+            }
+        }
+        continue
+    }
+
     $serverShares = @()
 
     # Try WMI / CIM first
@@ -223,14 +300,16 @@ foreach ($server in $candidateServers) {
         $probeStart = [System.Diagnostics.Stopwatch]::StartNew()
         $isAccessible = $false
         $accessLevel = "None"
+        $shareStatus = "Inaccessible"
         $denialReason = $null
 
-        # 4. Verify Real Permissions using Current Windows Security Token
+        # 5. Verify Real Permissions using Current Windows Security Token
         try {
             # Attempt directory enumeration using current token
             $entries = [System.IO.Directory]::GetFileSystemEntries($uncPath)
             $isAccessible = $true
             $accessLevel = "Read"
+            $shareStatus = "Accessible"
 
             # Check if write is permitted
             try {
@@ -244,11 +323,13 @@ foreach ($server in $candidateServers) {
             }
         } catch [System.UnauthorizedAccessException] {
             $isAccessible = $false
+            $shareStatus = "Inaccessible"
             $denialReason = "Access Denied (Windows NTFS/SMB ACL restrictions)"
             $inaccessibleCount++
             Write-DiagLog "SECURITY" "Access denied for current user on: $uncPath"
         } catch {
             $isAccessible = $false
+            $shareStatus = "Offline"
             $denialReason = $_.Exception.Message
             $inaccessibleCount++
             Write-DiagLog "WARN" "Unable to open $uncPath : $($_.Exception.Message)"
@@ -256,6 +337,9 @@ foreach ($server in $candidateServers) {
 
         $probeStart.Stop()
         $latencyMs = [int]$probeStart.ElapsedMilliseconds
+
+        # Check if mapped to a drive letter
+        $mappedDrive = $mappedDriveLookup[$uncPath.ToLower()]
 
         if ($isAccessible -or $IncludeInaccessible) {
             $discoveredShares += [ordered]@{
@@ -266,6 +350,9 @@ foreach ($server in $candidateServers) {
                 description = $sh.Description
                 isAccessible = $isAccessible
                 accessLevel = $accessLevel
+                status = $shareStatus
+                connectionStatus = "Online"
+                mappedDrive = $mappedDrive
                 denialReason = $denialReason
                 discoverySource = if ($server -eq $result.identity.domainController) { "LOGON_SERVER" } else { "AD_LDAP" }
                 responseTimeMs = $latencyMs

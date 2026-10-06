@@ -39,7 +39,7 @@ interface DiagnosticsModalProps {
   onRegisterShell: () => Promise<void>;
   onUnregisterShell: () => Promise<void>;
   onSyncShell: () => Promise<void>;
-  onMapDrive: (letter: string, uncPath: string, persistent: boolean) => Promise<void>;
+  onMapDrive: (letter: string, uncPath: string, persistent: boolean, replace?: boolean) => Promise<void>;
   onUnmapDrive: (letter: string) => Promise<void>;
   onOpenInExplorer: (path: string) => void;
   initialTab?: 'identity' | 'logs' | 'shell' | 'drives' | 'probe';
@@ -77,6 +77,7 @@ export const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({
   const [selectedShareUnc, setSelectedShareUnc] = React.useState('');
   const [persistentDrive, setPersistentDrive] = React.useState(true);
   const [driveMessage, setDriveMessage] = React.useState<string | null>(null);
+  const [conflictTarget, setConflictTarget] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     if (isOpen) {
@@ -163,16 +164,22 @@ export const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({
     }
   };
 
-  const handleMapDriveSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleMapDriveSubmit = async (e?: React.FormEvent, forceReplace = false) => {
+    if (e) e.preventDefault();
     if (!selectedDriveLetter || !selectedShareUnc) return;
     setIsShellBusy(true);
     setDriveMessage(null);
+    setConflictTarget(null);
     try {
-      await onMapDrive(selectedDriveLetter, selectedShareUnc, persistentDrive);
+      await onMapDrive(selectedDriveLetter, selectedShareUnc, persistentDrive, forceReplace);
       setDriveMessage(`Mapped ${selectedDriveLetter} to ${selectedShareUnc}`);
     } catch (err: unknown) {
-      setDriveMessage(err instanceof Error ? err.message : String(err));
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes('already in use') || msg.includes('conflict')) {
+        const existing = shellState?.mappedDrives.find(d => d.driveLetter === selectedDriveLetter);
+        setConflictTarget(existing?.uncPath || 'Another network share');
+      }
+      setDriveMessage(msg);
     } finally {
       setIsShellBusy(false);
     }
@@ -581,6 +588,19 @@ export const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({
                 {driveMessage && (
                   <div className="p-2 rounded bg-slate-900 border border-slate-700 text-xs text-blue-300 font-mono">
                     {driveMessage}
+                  </div>
+                )}
+
+                {conflictTarget && (
+                  <div className="p-2.5 rounded bg-amber-950/60 border border-amber-800 text-xs text-amber-200 flex items-center justify-between gap-2">
+                    <span>Letter {selectedDriveLetter} mapped to: <b>{conflictTarget}</b></span>
+                    <button
+                      type="button"
+                      onClick={() => handleMapDriveSubmit(undefined, true)}
+                      className="px-2 py-1 bg-amber-600 hover:bg-amber-500 text-white rounded text-[11px] font-medium"
+                    >
+                      Replace Existing Mapping
+                    </button>
                   </div>
                 )}
               </div>

@@ -58,6 +58,11 @@ async function startServer() {
   app.get('/api/shares', async (req: Request, res: Response) => {
     try {
       const result = await discoveryService.getShares(false);
+      const shellStatus = await shellIntegrationService.getStatus();
+      const mappedByUnc = new Map(shellStatus.mappedDrives.map(d => [d.uncPath.toLowerCase(), d.driveLetter]));
+      for (const share of result.shares) {
+        share.mappedDrive = mappedByUnc.get(share.uncPath.toLowerCase()) || null;
+      }
       res.json(result);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
@@ -74,6 +79,11 @@ async function startServer() {
       const result = await discoveryService.discoverShares();
       // Automatically synchronize updated shares with the Virtual Shell Folder
       await shellIntegrationService.syncSharesToVirtualFolder(result.shares);
+      const shellStatus = await shellIntegrationService.getStatus();
+      const mappedByUnc = new Map(shellStatus.mappedDrives.map(d => [d.uncPath.toLowerCase(), d.driveLetter]));
+      for (const share of result.shares) {
+        share.mappedDrive = mappedByUnc.get(share.uncPath.toLowerCase()) || null;
+      }
       res.json(result);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
@@ -188,18 +198,39 @@ async function startServer() {
 
   app.post('/api/shell/map-drive', async (req: Request, res: Response) => {
     try {
-      const { driveLetter, uncPath, persistent = true } = req.body;
+      const { driveLetter, uncPath, persistent = true, replaceExisting = false } = req.body;
       if (!driveLetter || !uncPath) {
         res.status(400).json({ error: 'driveLetter and uncPath are required' });
         return;
       }
-      const mapped = await shellIntegrationService.mapDriveLetter(driveLetter, uncPath, Boolean(persistent));
+      const mapped = await shellIntegrationService.mapDriveLetter(
+        driveLetter,
+        uncPath,
+        Boolean(persistent),
+        Boolean(replaceExisting)
+      );
       const status = await shellIntegrationService.getStatus();
       res.json({ mapped, status });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
+      const conflictData = (err as unknown as { isConflict?: boolean; conflictData?: unknown }).conflictData;
+      if (conflictData) {
+        logger.warn('API:Shell', `Drive mapping conflict detected on ${req.body.driveLetter}`);
+        res.status(409).json({ error: message, isConflict: true, conflict: conflictData });
+        return;
+      }
       logger.error('API:Shell', 'Failed to map network drive', err);
       res.status(400).json({ error: message });
+    }
+  });
+
+  app.get('/api/shell/drive-letters', async (req: Request, res: Response) => {
+    try {
+      const letters = shellIntegrationService.getAvailableDriveLetters();
+      res.json({ letters });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: message });
     }
   });
 

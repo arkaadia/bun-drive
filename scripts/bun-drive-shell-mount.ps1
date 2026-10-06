@@ -24,7 +24,8 @@ param (
     [string]$SharesJson = '[]',
     [string]$DriveLetter = '',
     [string]$UncPath = '',
-    [bool]$Persistent = $true
+    [bool]$Persistent = $true,
+    [bool]$ReplaceExisting = $false
 )
 
 $ErrorActionPreference = 'SilentlyContinue'
@@ -207,6 +208,9 @@ if ($Action -eq 'Register') {
 } elseif ($Action -eq 'MapDrive') {
     if ($DriveLetter -and $UncPath) {
         $cleanLetter = if ($DriveLetter.EndsWith(':')) { $DriveLetter } else { "${DriveLetter}:" }
+        if ($ReplaceExisting) {
+            net use $cleanLetter /delete /y 2>&1 | Out-Null
+        }
         $persistFlag = if ($Persistent) { "/persistent:yes" } else { "/persistent:no" }
         net use $cleanLetter "$UncPath" $persistFlag 2>&1 | Out-Null
     }

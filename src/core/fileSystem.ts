@@ -118,6 +118,48 @@ export class WindowsFileSystemService {
       }
     }
 
+    // Permission and offline checks for non-Windows testing / fallback
+    if (server.toLowerCase().includes('offline') || server.toLowerCase().includes('unreachable')) {
+      return {
+        currentPath: targetPath,
+        server,
+        share,
+        subPath,
+        parentPath: null,
+        entries: [],
+        totalFolders: 0,
+        totalFiles: 0,
+        accessible: false,
+        error: `Network Error: The network path "${targetPath}" could not be reached. The file server is offline or unreachable.`
+      };
+    }
+
+    if (
+      share.toLowerCase().includes('executive') || 
+      share.toLowerCase().includes('hr-confidential') || 
+      subPath.toLowerCase().includes('denied') || 
+      subPath.toLowerCase().includes('restricted')
+    ) {
+      const parentPath = subPath 
+        ? (subPath.includes('\\') 
+            ? `\\\\${server}\\${share}\\${subPath.split('\\').slice(0, -1).join('\\')}`
+            : `\\\\${server}\\${share}`)
+        : null;
+
+      return {
+        currentPath: targetPath,
+        server,
+        share,
+        subPath,
+        parentPath,
+        entries: [],
+        totalFolders: 0,
+        totalFiles: 0,
+        accessible: false,
+        error: 'Access Denied: Windows NTFS permissions do not allow reading this directory.'
+      };
+    }
+
     // Dynamic fixture browsing for domain share structures
     const fixtureEntries = this.generateShareContents(server, share, subPath);
     
@@ -155,6 +197,16 @@ export class WindowsFileSystemService {
 
     if (!subPath) {
       // Root of share
+      if (share.toLowerCase() === 'projects') {
+        return [
+          this.createDir(basePath, 'Network', '2026-10-02T11:00:00Z'),
+          this.createDir(basePath, 'Infrastructure', '2026-09-28T09:30:00Z'),
+          this.createDir(basePath, 'Software-Rollout', '2026-10-01T14:15:00Z'),
+          this.createFile(basePath, 'Project-Master-Schedule.xlsx', 1950000, '2026-10-03T16:00:00Z'),
+          this.createFile(basePath, 'Architecture-Overview.pdf', 3200000, '2026-09-25T10:45:00Z')
+        ];
+      }
+
       if (share.toLowerCase() === 'public') {
         return [
           this.createDir(basePath, 'Company-Templates', '2026-09-15T08:30:00Z'),
@@ -210,6 +262,28 @@ export class WindowsFileSystemService {
       ];
     } else {
       // Subfolder contents
+      const normalizedSub = subPath.toLowerCase().replace(/\\/g, '/');
+      if (normalizedSub === 'network') {
+        return [
+          this.createDir(basePath, 'Cisco', '2026-10-04T12:00:00Z'),
+          this.createDir(basePath, 'Juniper', '2026-09-15T09:30:00Z'),
+          this.createFile(basePath, 'Subnet-Plan.xlsx', 540000, '2026-10-02T14:10:00Z')
+        ];
+      }
+      if (normalizedSub === 'network/cisco' || normalizedSub.endsWith('/cisco')) {
+        return [
+          this.createDir(basePath, 'IOS-Images', '2026-09-10T08:00:00Z'),
+          this.createFile(basePath, 'Switch-Core01-Running.cfg', 28400, '2026-10-03T16:20:00Z'),
+          this.createFile(basePath, 'VLAN-Configuration.txt', 12400, '2026-10-04T11:00:00Z')
+        ];
+      }
+      if (normalizedSub === 'company-templates') {
+        return [
+          this.createDir(basePath, 'Letterheads', '2026-09-10T10:00:00Z'),
+          this.createDir(basePath, 'PowerPoint', '2026-09-12T14:00:00Z'),
+          this.createFile(basePath, 'Standard-NDA-Template.docx', 420000, '2026-09-20T11:30:00Z')
+        ];
+      }
       const folderName = subPath.split('\\').pop() || 'Subfolder';
       return [
         this.createFile(basePath, `${folderName}-Summary.docx`, 1850000, '2026-10-03T15:20:00Z'),

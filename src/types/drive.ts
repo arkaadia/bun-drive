@@ -11,6 +11,7 @@ export interface WindowsIdentity {
   dnsDomain?: string;        // Fully-qualified DNS domain, e.g. "contoso.local"
   userSid: string;           // Windows Security Identifier, e.g. "S-1-5-21-..."
   isDomainJoined: boolean;   // Whether the computer belongs to an AD domain
+  workgroupStatus?: string;  // e.g. "Domain Joined (CONTOSO.LOCAL)" or "Workgroup (WORKGROUP)"
   domainController?: string; // Hostname or IP of primary DC, e.g. "DC01.contoso.local"
   logonServer?: string;      // Logon server UNC e.g. "\\DC01"
   authType: 'Kerberos' | 'NTLM' | 'Negotiate' | 'Local';
@@ -19,6 +20,8 @@ export interface WindowsIdentity {
 }
 
 export type ShareAccessLevel = 'Read' | 'ReadWrite' | 'None';
+
+export type ShareStatus = 'Accessible' | 'Inaccessible' | 'Offline';
 
 export type DiscoverySource = 
   | 'AD_LDAP'        // Discovered via Active Directory LDAP computer/server search
@@ -35,6 +38,9 @@ export interface NetworkShare {
   description?: string;      // Share comment/remark from SMB header
   isAccessible: boolean;     // Whether the current Windows user has read/traverse permissions
   accessLevel: ShareAccessLevel;
+  status?: ShareStatus;      // Phase 3: Accessibility status ('Accessible' | 'Inaccessible' | 'Offline')
+  connectionStatus?: 'Online' | 'Offline' | 'Unreachable';
+  mappedDrive?: string | null; // e.g. "Z:" or null if unmapped
   denialReason?: string;     // Reason if access denied (e.g. "Access Denied (NTFS/SMB ACL)")
   discoverySource: DiscoverySource;
   responseTimeMs: number;    // Latency to probe the share
@@ -156,5 +162,22 @@ export interface ShellSyncResult {
   activeShortcuts: ShellShortcutEntry[];
   durationMs: number;
   timestamp: string;
+}
+
+/**
+ * Phase 3: Active Directory Share Management & Drive Conflict Types
+ */
+export interface DriveMappingConflict {
+  hasConflict: boolean;
+  driveLetter: string;
+  existingTarget?: string;
+  existingMapping?: MappedDriveLetter;
+  message?: string;
+}
+
+export interface AvailableDriveLetter {
+  letter: string;
+  isMapped: boolean;
+  currentTarget?: string;
 }
 
